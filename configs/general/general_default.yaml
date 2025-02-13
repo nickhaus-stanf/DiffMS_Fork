@@ -1,0 +1,28 @@
+# General settings
+#name: 'spec2mol-msg-downproject-CSMML-XL-MIST_MSG_2-smallBS' # Warning: 'debug' and 'test' are reserved name that have a special behavior
+name: 'dev3'
+
+parent_dir: '.'
+
+wandb: 'online'             # online | offline | disabled
+wandb_name: 'mass_spec_exp'
+gpus: 1                     # Multi-gpu is not implemented on this branch
+
+
+model: null # path to pretrained decoder
+encoder: null # path to pretrained encoder
+
+resume: null            # If resume, path to ckpt file from outputs direpctory in main directory
+test_only: null
+
+pretrained: null
+finetune_strategy: null  # null | freeze_encoder | freeze_decoder | freeze_encoder_transformer | ft_decoder-input_encoder | ft_decoder-output_encoder | freeze_encoder_decoder-transformer
+
+check_val_every_n_epochs: 1
+sample_every_val: 1000
+val_check_interval: null
+samples_to_generate: 16       # We advise to set it to 2 x batch_size maximum
+log_every_steps: 50
+
+evaluate_all_checkpoints: False
+checkpoint_strategy: 'last'
