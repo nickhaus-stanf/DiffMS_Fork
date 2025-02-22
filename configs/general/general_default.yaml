@@ -1,6 +1,5 @@
 # General settings
-#name: 'spec2mol-msg-downproject-CSMML-XL-MIST_MSG_2-smallBS' # Warning: 'debug' and 'test' are reserved name that have a special behavior
-name: 'dev3'
+name: 'dev' # Warning: 'debug' and 'test' are reserved name that have a special behavior
 
 parent_dir: '.'
 
@@ -21,7 +20,7 @@ finetune_strategy: null  # null | freeze_encoder | freeze_decoder | freeze_encod
 check_val_every_n_epochs: 1
 sample_every_val: 1000
 val_check_interval: null
-samples_to_generate: 16       # We advise to set it to 2 x batch_size maximum
+samples_to_generate: 192       # We advise to set it to 2 x batch_size maximum
 log_every_steps: 50
 
 evaluate_all_checkpoints: False
