@@ -1,6 +1,8 @@
 # DiffMS: Diffusion Generation of Molecules Conditioned on Mass Spectra
 
-This is the codebase for our preprint DiffMS: Diffusion Generation of Molecules Conditioned on Mass Spectra.
+![teaser](./figs/diffms-animation.gif)
+
+This is the codebase for our preprint [DiffMS: Diffusion Generation of Molecules Conditioned on Mass Spectra](https://arxiv.org/abs/2502.09571).
 
 The DiffMS codebase is adapted from [DiGress](https://github.com/cvignac/DiGress). 
 
@@ -37,3 +39,14 @@ DiffMS is released under the [MIT](LICENSE.txt) license.
 ## Contact
 
 If you have any questions, please reach out to mbohde@tamu.edu
+
+## Contact
+If you find this codebase useful in your research, please kindly cite the following manuscript
+```
+@article{bohde2025diffms,
+  title={DiffMS: Diffusion Generation of Molecules Conditioned on Mass Spectra},
+  author={Bohde, Montgomery and Manjrekar, Mrunali and Wang, Runzhong and Ji, Shuiwang and Coley, Connor W},
+  journal={arXiv preprint arXiv:2502.09571},
+  year={2025}
+}
+```
