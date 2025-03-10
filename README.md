@@ -40,7 +40,7 @@ DiffMS is released under the [MIT](LICENSE.txt) license.
 
 If you have any questions, please reach out to mbohde@tamu.edu
 
-## Contact
+## Reference
 If you find this codebase useful in your research, please kindly cite the following manuscript
 ```
 @article{bohde2025diffms,
