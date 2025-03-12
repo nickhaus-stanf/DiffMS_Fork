@@ -140,9 +140,10 @@ results/*
 
 checkpoints/*
 notebooks/data/*
-configs/*
-data/*
+data/
+data2/
 
 __pycache__/
 **/__pycache__/
 *.pyc
+train.sh

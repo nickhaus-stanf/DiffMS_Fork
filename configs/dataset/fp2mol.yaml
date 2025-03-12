@@ -1,6 +1,6 @@
 name: fp2mol
-dataset: msg
-stats_dir: '../../../data/fp2mol/combined_moses/stats/'
+dataset: combined
+stats_dir: null
 remove_h: null
 datadir: 'data/fp2mol/'
 filter: False

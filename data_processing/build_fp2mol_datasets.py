@@ -110,9 +110,9 @@ excluded_inchis = set(canopus_test_inchis + canopus_val_inchis)
 
 ########## MSG DATASET ##########
 
-msg_split = pd.read_csv('../data/msg/split.tsv', sep='\t')
+msg_split = pd.read_csv('../data2/msg/split.tsv', sep='\t')
 
-msg_labels = pd.read_csv('../data/msg/labels.tsv', sep='\t')
+msg_labels = pd.read_csv('../data2/msg/labels.tsv', sep='\t')
 msg_labels["name"] = msg_labels["spec"]
 msg_labels = msg_labels[["name", "smiles"]].reset_index(drop=True)
 
@@ -210,7 +210,7 @@ dss_val_df.to_csv("../data/fp2mol/dss/preprocessed/dss_val.csv", index=False)
 
 ########## COCONUT DATASET ##########
 
-coconut_df = pd.read_csv('../data/fp2mol/raw/coconut_complete-10-2024.csv')
+coconut_df = pd.read_csv('../data/fp2mol/raw/coconut_csv-03-2025.csv')
 
 coconut_set_raw = set(coconut_df["canonical_smiles"])
 
@@ -242,7 +242,7 @@ coconut_val_df.to_csv("../data/fp2mol/coconut/preprocessed/coconut_val.csv", ind
 
 ########## MOSES DATASET ##########
 
-moses_df = pd.read_csv('../data/fp2mol/raw/moses_complete.csv')
+moses_df = pd.read_csv('../data/fp2mol/raw/moses.csv')
 
 moses_set_raw = set(moses_df["SMILES"])
 
