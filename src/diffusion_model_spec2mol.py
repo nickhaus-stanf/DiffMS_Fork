@@ -84,7 +84,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
                                       act_fn_in=nn.ReLU(),
                                       act_fn_out=nn.ReLU())
 
-        if cfg.general.model is not None:
+        if cfg.general.decoder is not None:
             state_dict = torch.load(cfg.general.model, map_location='cpu')
             if 'state_dict' in state_dict:
                 state_dict = state_dict['state_dict']
