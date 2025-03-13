@@ -12,8 +12,17 @@ This code was tested with PyTorch 2.3.1, cuda 11.8 and torch_geometrics 2.3.1
   - Download anaconda/miniconda if needed
   - Create a conda environment with rdkit:
     
-    ```conda create -y -c conda-forge -n diffms rdkit=2024.09.4 python=3.9```
-  - `conda activate diffms`
+    ```
+    conda create -y -c conda-forge -n diffms rdkit=2024.09.4 python=3.9
+    conda activate diffms
+    ```
+
+  - OR for a faster installation, you can use mamba:
+
+    ```
+    mamba create -y -n diffms rdkit=2024.09.4 python=3.9
+    mamba activate diffms
+    ```
     
   - Install a corresponding version of pytorch, for example: 
     
