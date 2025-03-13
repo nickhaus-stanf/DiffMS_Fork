@@ -36,7 +36,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.name = cfg.general.name
         self.model_dtype = torch.float32
         self.T = cfg.model.diffusion_steps
-        self.num_samples = cfg.general.samples_to_generate
+        self.val_num_samples = cfg.general.val_samples_to_generate
+        self.test_num_samples = cfg.general.test_samples_to_generate
 
         self.Xdim = input_dims['X']
         self.Edim = input_dims['E']
@@ -55,8 +56,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.val_E_kl = SumExceptBatchKL()
         self.val_X_logp = SumExceptBatchMetric()
         self.val_E_logp = SumExceptBatchMetric()
-        self.val_k_acc = K_ACC_Collection(list(range(1, self.num_samples + 1)))
-        self.val_sim_metrics = K_SimilarityCollection(list(range(1, self.num_samples + 1)))
+        self.val_k_acc = K_ACC_Collection(list(range(1, self.val_num_samples + 1)))
+        self.val_sim_metrics = K_SimilarityCollection(list(range(1, self.val_num_samples + 1)))
         self.val_validity = Validity()
         self.val_CE = CrossEntropyMetric()
 
@@ -65,8 +66,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.test_E_kl = SumExceptBatchKL()
         self.test_X_logp = SumExceptBatchMetric()
         self.test_E_logp = SumExceptBatchMetric()
-        self.test_k_acc = K_ACC_Collection(list(range(1, self.num_samples + 1)))
-        self.test_sim_metrics = K_SimilarityCollection(list(range(1, self.num_samples + 1)))
+        self.test_k_acc = K_ACC_Collection(list(range(1, self.test_num_samples + 1)))
+        self.test_sim_metrics = K_SimilarityCollection(list(range(1, self.test_num_samples + 1)))
         self.test_validity = Validity()
         self.test_CE = CrossEntropyMetric()
 
@@ -299,7 +300,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         if self.val_counter % self.cfg.general.sample_every_val == 0:
             true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
             predicted_mols = [list() for _ in range(len(data))]
-            for _ in range(self.num_samples):
+            for _ in range(self.val_num_samples):
                 for idx, mol in enumerate(self.sample_batch(data)):
                     predicted_mols[idx].append(mol)
         
@@ -397,7 +398,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
         predicted_mols = [list() for _ in range(len(data))]
-        for _ in range(self.num_samples):
+        for _ in range(self.test_num_samples):
             for idx, mol in enumerate(self.sample_batch(data)):
                 predicted_mols[idx].append(mol)
 

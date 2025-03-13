@@ -161,6 +161,10 @@ def main(cfg: DictConfig):
     except OSError:
         pass
     try:
+        os.makedirs('models/')
+    except OSError:
+        pass
+    try:
         os.makedirs('logs/')
     except OSError:
         pass
@@ -210,7 +214,7 @@ def main(cfg: DictConfig):
 
     loggers = [
         CSVLogger(save_dir=f"logs/{name}", name=name),
-        WandbLogger(name=name, save_dir=f"logs/{name}", project=cfg.general.wandb_name, log_model=False, config=cfg)
+        WandbLogger(name=name, save_dir=f"logs/{name}", project=cfg.general.wandb_name, log_model=False, config=utils.cfg_to_dict(cfg))
     ]
 
     use_gpu = cfg.general.gpus > 0 and torch.cuda.is_available()

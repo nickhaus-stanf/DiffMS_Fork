@@ -18,9 +18,9 @@ pretrained: null
 finetune_strategy: null  # null | freeze_encoder | freeze_decoder | freeze_encoder_transformer | ft_decoder-input_encoder | ft_decoder-output_encoder | freeze_encoder_decoder-transformer
 
 check_val_every_n_epochs: 1
-sample_every_val: 1000
-val_check_interval: null
-samples_to_generate: 192       # We advise to set it to 2 x batch_size maximum
+sample_every_val: 10
+val_samples_to_generate: 16      
+test_samples_to_generate: 100      
 log_every_steps: 50
 
 evaluate_all_checkpoints: False
