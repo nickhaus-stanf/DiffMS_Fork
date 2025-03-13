@@ -12,18 +12,105 @@ import numpy as np
 from torch_geometric.data import Data, InMemoryDataset
 import pandas as pd
 from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from joblib import Parallel, delayed
+from tqdm_joblib import tqdm_joblib
 
 from src import utils
 from src.analysis.rdkit_functions import mol2smiles, build_molecule_with_partial_charges, compute_molecular_metrics
 from src.datasets.abstract_dataset import AbstractDatasetInfos, MolecularDataModule
 from src.datasets.abstract_dataset import ATOM_TO_VALENCY, ATOM_TO_WEIGHT
 
-
 def to_list(value: Any) -> Sequence:
     if isinstance(value, Sequence) and not isinstance(value, str):
         return value
     else:
         return [value]
+
+def process_single_inchi(args):
+    """
+    Process a single inchi string.
+    
+    Parameters:
+        args: tuple of (i, inchi, types, bonds, morgan_r, morgan_nbits,
+                           filter_dataset, pre_filter, pre_transform, atom_decoder)
+    Returns:
+        If filter_dataset is True: a tuple (data, smiles) if the molecule passes filtering,
+            or None otherwise.
+        Otherwise: the processed Data object (or None if it fails).
+    """
+    RDLogger.DisableLog('rdApp.*')
+
+    #unpack args
+    (i, inchi, types, bonds, morgan_r, morgan_nbits,
+     filter_dataset, pre_filter, pre_transform, atom_decoder) = args
+    
+    try:
+        mol = Chem.MolFromInchi(inchi)
+        if mol is None:
+            return None
+        # Remove stereochemistry information
+        smi = Chem.MolToSmiles(mol, isomericSmiles=False)
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            return None
+        N = mol.GetNumAtoms()
+        type_idx = []
+        for atom in mol.GetAtoms():
+            symbol = atom.GetSymbol()
+            if symbol not in types:
+                return None  # Skip if unknown atom is encountered
+            type_idx.append(types[symbol])
+        row, col, edge_type = [], [], []
+        for bond in mol.GetBonds():
+            start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            row += [start, end]
+            col += [end, start]
+            edge_type += 2 * [bonds[bond.GetBondType()] + 1]
+        if len(row) == 0:
+            return None
+        edge_index = torch.tensor([row, col], dtype=torch.long)
+        edge_type = torch.tensor(edge_type, dtype=torch.long)
+        edge_attr = F.one_hot(edge_type, num_classes=len(bonds) + 1).to(torch.float)
+        perm = (edge_index[0] * N + edge_index[1]).argsort()
+        edge_index = edge_index[:, perm]
+        edge_attr = edge_attr[perm]
+        x = F.one_hot(torch.tensor(type_idx), num_classes=len(types)).float()
+        fp = GetMorganFingerprintAsBitVect(mol, morgan_r, nBits=morgan_nbits)
+        y = torch.tensor(np.asarray(fp, dtype=np.int8)).unsqueeze(0)
+        inchi_canonical = Chem.MolToInchi(mol)
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, idx=i, inchi=inchi_canonical)
+        
+        if filter_dataset:
+            # Filtering: rebuild the molecule from the graph
+            batch = getattr(data, 'batch', torch.zeros(data.x.size(0), dtype=torch.long))
+            dense_data, node_mask = utils.to_dense(data.x, data.edge_index, data.edge_attr, batch)
+            dense_data = dense_data.mask(node_mask, collapse=True)
+            X, E = dense_data.X, dense_data.E
+            if X.size(0) != 1:
+                return None
+            atom_types = X[0]
+            edge_types = E[0]
+            mol_reconstructed = build_molecule_with_partial_charges(atom_types, edge_types, atom_decoder)
+            smiles = mol2smiles(mol_reconstructed)
+            if smiles is not None:
+                try:
+                    mol_frags = Chem.rdmolops.GetMolFrags(mol_reconstructed, asMols=True, sanitizeFrags=True)
+                    if len(mol_frags) == 1:
+                        return (data, smiles)
+                except Chem.rdchem.AtomValenceException:
+                    print("Valence error in GetMolFrags")
+                except Chem.rdchem.KekulizeException:
+                    print("Can't kekulize molecule")
+            return None
+        else:
+            if pre_filter is not None and not pre_filter(data):
+                return None
+            if pre_transform is not None:
+                data = pre_transform(data)
+            return data
+    except Exception as e:
+        print(e)
+        return None
 
 atom_decoder = ['C', 'O', 'P', 'N', 'S', 'Cl', 'F', 'H']
 valency = [ATOM_TO_VALENCY.get(atom, 0) for atom in atom_decoder]
@@ -132,76 +219,29 @@ class FP2MolDataset(InMemoryDataset):
             data_list = []
             smiles_kept = []
 
-            for i, inchi in enumerate(tqdm(inchi_list)):
-                try:
-                    mol = Chem.MolFromInchi(inchi) 
-                    smi = Chem.MolToSmiles(mol, isomericSmiles=False) # remove stereochemistry information
-                    mol = Chem.MolFromSmiles(smi)
+            # Build the argument list for parallel processing.
+            args_list = [
+                (i, inchi, types, bonds, self.morgan_r, self.morgan_nbits,
+                 self.filter_dataset, self.pre_filter, self.pre_transform, self.atom_decoder)
+                for i, inchi in enumerate(inchi_list)
+            ]
 
-                    N = mol.GetNumAtoms()
+            # Use joblib's Parallel with tqdm_joblib to show a progress bar.
+            with tqdm_joblib(tqdm(desc="Processing inchi.....", total=len(args_list), leave=False)) as progress_bar:
 
-                    type_idx = []
-                    for atom in mol.GetAtoms():
-                        type_idx.append(types[atom.GetSymbol()])
+                results = Parallel(n_jobs=-1)(delayed(process_single_inchi)(arg) for arg in args_list)
 
-                    row, col, edge_type = [], [], []
-                    for bond in mol.GetBonds():
-                        start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-                        row += [start, end]
-                        col += [end, start]
-                        edge_type += 2 * [bonds[bond.GetBondType()] + 1]
-
-                    if len(row) == 0:
-                        continue
-
-                    edge_index = torch.tensor([row, col], dtype=torch.long)
-                    edge_type = torch.tensor(edge_type, dtype=torch.long)
-                    edge_attr = F.one_hot(edge_type, num_classes=len(bonds) + 1).to(torch.float)
-
-                    perm = (edge_index[0] * N + edge_index[1]).argsort()
-                    edge_index = edge_index[:, perm]
-                    edge_attr = edge_attr[perm]
-
-                    x = F.one_hot(torch.tensor(type_idx), num_classes=len(types)).float()
-                    y = torch.tensor(np.asarray(GetMorganFingerprintAsBitVect(mol, self.morgan_r, nBits=self.morgan_nbits), dtype=np.int8)).unsqueeze(0)
-
-                    inchi = Chem.MolToInchi(mol)
-
-                    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, idx=i, inchi=inchi)
-
-                    if self.filter_dataset: # TODO: Check filter_dataset
-                        # Try to build the molecule again from the graph. If it fails, do not add it to the training set
-                        dense_data, node_mask = utils.to_dense(data.x, data.edge_index, data.edge_attr, data.batch)
-                        dense_data = dense_data.mask(node_mask, collapse=True)
-                        X, E = dense_data.X, dense_data.E
-
-                        assert X.size(0) == 1
-                        atom_types = X[0]
-                        edge_types = E[0]
-                        mol = build_molecule_with_partial_charges(atom_types, edge_types, atom_decoder)
-                        smiles = mol2smiles(mol)
-                        if smiles is not None:
-                            try:
-                                mol_frags = Chem.rdmolops.GetMolFrags(mol, asMols=True, sanitizeFrags=True)
-                                if len(mol_frags) == 1:
-                                    data_list.append(data)
-                                    smiles_kept.append(smiles)
-
-                            except Chem.rdchem.AtomValenceException:
-                                print("Valence error in GetmolFrags")
-                            except Chem.rdchem.KekulizeException:
-                                print("Can't kekulize molecule")
-                    else:
-                        if self.pre_filter is not None and not self.pre_filter(data):
-                            continue
-                        if self.pre_transform is not None:
-                            data = self.pre_transform(data)
+            # Process results: if filter_dataset is enabled, result is a tuple (data, smiles)
+            for result in tqdm(results, desc="Filtering graphs.....", total=len(results), leave=False):
+                if result is not None:
+                    if self.filter_dataset:
+                        data, smiles = result
                         data_list.append(data)
-                except Exception as e:
-                    print(e)
+                        smiles_kept.append(smiles)
+                    else:
+                        data_list.append(result)
 
             torch.save(self.collate(data_list), self.processed_paths[self.file_idx])
-
 
 class FP2MolDataModule(MolecularDataModule):
     def __init__(self, cfg):
