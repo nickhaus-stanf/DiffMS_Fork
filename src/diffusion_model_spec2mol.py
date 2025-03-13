@@ -34,7 +34,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         self.cfg = cfg
         self.name = cfg.general.name
-        self.model_dtype = torch.float32
+        self.decoder_dtype = torch.float32
         self.T = cfg.model.diffusion_steps
         self.val_num_samples = cfg.general.val_samples_to_generate
         self.test_num_samples = cfg.general.test_samples_to_generate
@@ -77,7 +77,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.extra_features = extra_features
         self.domain_features = domain_features
 
-        self.model = GraphTransformer(n_layers=cfg.model.n_layers,
+        self.decoder = GraphTransformer(n_layers=cfg.model.n_layers,
                                       input_dims=input_dims,
                                       hidden_mlp_dims=cfg.model.hidden_mlp_dims,
                                       hidden_dims=cfg.model.hidden_dims,
@@ -86,7 +86,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
                                       act_fn_out=nn.ReLU())
 
         if cfg.general.decoder is not None:
-            state_dict = torch.load(cfg.general.model, map_location='cpu')
+            state_dict = torch.load(cfg.general.decoder, map_location='cpu')
             if 'state_dict' in state_dict:
                 state_dict = state_dict['state_dict']
                 
@@ -96,7 +96,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
                     k = k[6:]
                     cleaned_state_dict[k] = v
 
-            self.model.load_state_dict(cleaned_state_dict)
+            self.decoder.load_state_dict(cleaned_state_dict)
 
         hidden_size = 256
         try:
@@ -630,7 +630,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         X = torch.cat((noisy_data['X_t'], extra_data.X), dim=2).float()
         E = torch.cat((noisy_data['E_t'], extra_data.E), dim=3).float()
         y = torch.hstack((noisy_data['y_t'], extra_data.y)).float()
-        return self.model(X, E, y, node_mask)
+        return self.decoder(X, E, y, node_mask)
     
     @torch.no_grad()
     def sample_batch(self, data: Batch) -> Batch:

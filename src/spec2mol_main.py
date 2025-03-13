@@ -70,33 +70,64 @@ def get_resume_adaptive(cfg, model_kwargs):
     new_cfg = utils.update_config_with_new_keys(new_cfg, saved_cfg)
     return new_cfg, model
 
-def apply_finetuning(model, strategy):
+def apply_encoder_finetuning(model, strategy):    
     if strategy is None:
         pass
-    elif strategy == 'freeze_encoder':
+    elif strategy == 'freeze':
         for param in model.encoder.parameters():
             param.requires_grad = False
-    elif strategy == 'freeze_decoder':
-        for param in model.model.parameters():
+    elif strategy == 'ft-unfold':
+        for param in model.encoder.named_parameters():
+            layer = param[0].split('.')[1]
+            if layer != '2':
+                param[1].requires_grad = False
+    elif strategy == 'freeze-unfold':
+        for param in model.encoder.named_parameters():
+            layer = param[0].split('.')[1]
+            if layer == '2':
+                param[1].requires_grad = False
+    elif strategy == 'ft-transformer':
+        for param in model.encoder.named_parameters():
+            layer = param[0].split('.')[1]
+            if layer != '0':
+                param[1].requires_grad = False
+    elif strategy == 'freeze-transformer':
+        for param in model.encoder.named_parameters():
+            layer = param[0].split('.')[1]
+            if layer == '0':
+                param[1].requires_grad = False
+    else:
+        raise NotImplementedError(f'Unknown Finetune Strategy: {strategy}')
+    
+def apply_decoder_finetuning(model, strategy):
+    if strategy is None:
+        pass
+    elif strategy == 'freeze':
+        for param in model.decoder.parameters():
             param.requires_grad = False
-    elif strategy == 'freeze_encoder_transformer':
-        for param in model.model.tf_layers.parameters():
-            param.requires_grad = False
-    elif strategy == 'ft_decoder-input_encoder':
-        for p in model.model.named_parameters():
+    elif strategy == 'ft-input':
+        for p in model.decoder.named_parameters():
             layer_name = p[0].split('.')[0]
             if layer_name not in ['mlp_in_X', 'mlp_in_E', 'mlp_in_y']:
-                p[1].requires_grad = False 
-    elif strategy == 'ft_decoder-output_encoder':
-        for p in model.model.named_parameters():
+                p[1].requires_grad = False
+    elif strategy == 'freeze-input':
+        for p in model.decoder.named_parameters():
+            layer_name = p[0].split('.')[0]
+            if layer_name in ['mlp_in_X', 'mlp_in_E', 'mlp_in_y']:
+                p[1].requires_grad = False
+    elif strategy == 'ft-transformer':
+        for param in model.decoder.parameters():
+            param.requires_grad = False
+        for param in model.decoder.tf_layers.parameters():
+            param.requires_grad = True
+    elif strategy == 'freeze-transformer':
+        for param in model.decoder.tf_layers.parameters():
+            param.requires_grad = False
+    elif strategy == 'ft-output':
+        for p in model.decoder.named_parameters():
             layer_name = p[0].split('.')[0]
             if layer_name not in ['mlp_out_X', 'mlp_out_E', 'mlp_out_y']:
                 p[1].requires_grad = False
-    elif strategy == 'freeze_encoder_decoder-transformer':
-        for param in model.encoder.parameters():
-            param.requires_grad = False
-        for param in model.model.tf_layers.parameters():
-            param.requires_grad = False                
     else:
         raise NotImplementedError(f'Unknown Finetune Strategy: {strategy}')
 
@@ -213,7 +244,8 @@ def main(cfg: DictConfig):
                       log_every_n_steps=50 if name != 'debug' else 1,
                       logger=loggers)
 
-    apply_finetuning(model, cfg.general.finetune_strategy)
+    apply_encoder_finetuning(model, cfg.general.encoder_finetune_strategy)
+    apply_decoder_finetuning(model, cfg.general.decoder_finetune_strategy)
 
     if not cfg.general.test_only:
         trainer.fit(model, datamodule=datamodule, ckpt_path=cfg.general.resume)

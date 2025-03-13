@@ -14,8 +14,8 @@ encoder: null # path to pretrained encoder
 resume: null            # If resume, path to ckpt file from outputs direpctory in main directory
 test_only: null
 
-pretrained: null
-finetune_strategy: null  # null | freeze_encoder | freeze_decoder | freeze_encoder_transformer | ft_decoder-input_encoder | ft_decoder-output_encoder | freeze_encoder_decoder-transformer
+encoder_finetune_strategy: null  # null | freeze | ft-unfold | freeze-unfold | freeze-transformer | ft-transformer
+decoder_finetune_strategy: null  # null | freeze | ft-input | freeze-input | ft-transformer | freeze-transformer | ft-output 
 
 check_val_every_n_epochs: 1
 sample_every_val: 10

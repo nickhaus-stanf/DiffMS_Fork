@@ -110,9 +110,9 @@ excluded_inchis = set(canopus_test_inchis + canopus_val_inchis)
 
 ########## MSG DATASET ##########
 
-msg_split = pd.read_csv('../data2/msg/split.tsv', sep='\t')
+msg_split = pd.read_csv('../data/msg/split.tsv', sep='\t')
 
-msg_labels = pd.read_csv('../data2/msg/labels.tsv', sep='\t')
+msg_labels = pd.read_csv('../data/msg/labels.tsv', sep='\t')
 msg_labels["name"] = msg_labels["spec"]
 msg_labels = msg_labels[["name", "smiles"]].reset_index(drop=True)
 
