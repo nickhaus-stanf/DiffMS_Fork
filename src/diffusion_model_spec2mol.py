@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import pickle
+import math
 
 import torch
 import torch.nn as nn
@@ -359,9 +360,6 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.test_CE.reset()
 
     def test_step(self, batch, i):
-        if i > 0:
-            return
-
         output, aux = self.encoder(batch)
 
         data = batch["graph"]
@@ -396,21 +394,23 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         self.test_CE(flat_pred_E, flat_true_E)
 
-        true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
-        predicted_mols = [list() for _ in range(len(data))]
-        for _ in range(self.test_num_samples):
-            for idx, mol in enumerate(self.sample_batch(data)):
-                predicted_mols[idx].append(mol)
+        if i <= math.ceil(self.cfg.general.num_test_samples / self.cfg.train.eval_batch_size):
+            true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
+            predicted_mols = [list() for _ in range(len(data))]
 
-        with open(f"preds/{self.name}_pred_{i}.pkl", "wb") as f:
-            pickle.dump(predicted_mols, f)
-        with open(f"preds/{self.name}_true_{i}.pkl", "wb") as f:
-            pickle.dump(true_mols, f)
+            for _ in range(self.test_num_samples):
+                for idx, mol in enumerate(self.sample_batch(data)):
+                    predicted_mols[idx].append(mol)
+
+            with open(f"preds/{self.name}_pred_{i}.pkl", "wb") as f:
+                pickle.dump(predicted_mols, f)
+            with open(f"preds/{self.name}_true_{i}.pkl", "wb") as f:
+                pickle.dump(true_mols, f)
         
-        for idx in range(len(data)):
-            self.test_k_acc.update(predicted_mols[idx], true_mols[idx])
-            self.test_sim_metrics.update(predicted_mols[idx], true_mols[idx])
-            self.test_validity.update(predicted_mols[idx])
+            for idx in range(len(data)):
+                self.test_k_acc.update(predicted_mols[idx], true_mols[idx])
+                self.test_sim_metrics.update(predicted_mols[idx], true_mols[idx])
+                self.test_validity.update(predicted_mols[idx])
 
         return {'loss': nll}
 
