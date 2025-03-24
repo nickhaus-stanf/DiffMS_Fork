@@ -219,7 +219,7 @@ class GraphTransformer(nn.Module):
     dims : dict -- contains dimensions for each feature type
     """
     def __init__(self, n_layers: int, input_dims: dict, hidden_mlp_dims: dict, hidden_dims: dict,
-                 output_dims: dict, act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU()):
+                 output_dims: dict, act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU(), **kwargs):
         super().__init__()
         self.n_layers = n_layers
         self.out_dim_X = output_dims['X']
@@ -283,3 +283,143 @@ class GraphTransformer(nn.Module):
         E = 1/2 * (E + torch.transpose(E, 1, 2))
 
         return utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)
+    
+class GraphTransformerV2(nn.Module):
+    """
+    n_layers : int -- number of layers
+    dims : dict -- contains dimensions for each feature type
+    """
+    def __init__(self, n_layers: int, input_dims: dict, hidden_mlp_dims: dict, hidden_dims: dict,
+                 output_dims: dict, act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU(), y_encoder_fp_dim: int = 2048,
+                 y_encoder_n_heads: int = 8, y_encoder_transformer_ff_dim: int = 256, 
+                 y_encoder_num_layers: int = 1, y_encoder_dropout: float = 0.1, **kwargs
+                ):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dim_X = output_dims['X']
+        self.out_dim_E = output_dims['E']
+        self.out_dim_y = output_dims['y']
+
+        self.y_encoder = FPMultiHeadAttention(
+            fp_dim=y_encoder_fp_dim,
+            n_heads=y_encoder_n_heads,
+            transformer_ff_dim=y_encoder_transformer_ff_dim,
+            num_layers=y_encoder_num_layers,
+            dropout=y_encoder_dropout
+        )
+
+        self.mlp_in_X = nn.Sequential(nn.Linear(input_dims['X'], hidden_mlp_dims['X']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['X'], hidden_dims['dx']), act_fn_in)
+
+        self.mlp_in_E = nn.Sequential(nn.Linear(input_dims['E'], hidden_mlp_dims['E']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['E'], hidden_dims['de']), act_fn_in)
+
+        self.mlp_in_y = nn.Sequential(nn.Linear(input_dims['y'], hidden_mlp_dims['y']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['y'], hidden_dims['dy']), act_fn_in)
+
+        self.tf_layers = nn.ModuleList([XEyTransformerLayer(dx=hidden_dims['dx'],
+                                                            de=hidden_dims['de'],
+                                                            dy=hidden_dims['dy'],
+                                                            n_head=hidden_dims['n_head'],
+                                                            dim_ffX=hidden_dims['dim_ffX'],
+                                                            dim_ffE=hidden_dims['dim_ffE'],
+                                                            dim_ffy=hidden_dims['dim_ffy'],)
+                                        for i in range(n_layers)])
+
+        self.mlp_out_X = nn.Sequential(nn.Linear(hidden_dims['dx'], hidden_mlp_dims['X']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['X'], output_dims['X']))
+
+        self.mlp_out_E = nn.Sequential(nn.Linear(hidden_dims['de'], hidden_mlp_dims['E']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['E'], output_dims['E']))
+
+        self.mlp_out_y = nn.Sequential(nn.Linear(hidden_dims['dy'], hidden_mlp_dims['y']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['y'], output_dims['y']))
+
+    def forward(self, X, E, y, node_mask):
+        bs, n = X.shape[0], X.shape[1]
+
+        diag_mask = torch.eye(n)
+        diag_mask = ~diag_mask.type_as(E).bool()
+        diag_mask = diag_mask.unsqueeze(0).unsqueeze(-1).expand(bs, -1, -1, -1)
+
+        X_to_out = X[..., :self.out_dim_X]
+        E_to_out = E[..., :self.out_dim_E]
+        y_to_out = y[..., :self.out_dim_y]
+
+        encoded_y = self.y_encoder(y)
+
+        new_E = self.mlp_in_E(E)
+        new_E = (new_E + new_E.transpose(1, 2)) / 2
+        after_in = utils.PlaceHolder(X=self.mlp_in_X(X), E=new_E, y=self.mlp_in_y(encoded_y)).mask(node_mask)
+        X, E, y = after_in.X, after_in.E, after_in.y
+
+        for layer in self.tf_layers:
+            X, E, y = layer(X, E, y, node_mask)
+
+        X = self.mlp_out_X(X)
+        E = self.mlp_out_E(E)
+        y = self.mlp_out_y(y)
+
+        X = (X + X_to_out)
+        E = (E + E_to_out) * diag_mask
+        y = y + y_to_out
+
+        E = 1/2 * (E + torch.transpose(E, 1, 2))
+
+        return utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)
+
+class FPMultiHeadAttention(nn.Module):
+    def __init__(
+        self,
+        fp_dim: int,
+        n_heads: int = 8,
+        transformer_ff_dim: int = 256,
+        num_layers: int = 1,
+        dropout: float = 0.1,
+        layer_norm_eps: float = 1e-5
+    ):
+        super().__init__()
+
+        if fp_dim % n_heads != 0:
+            raise ValueError(f"fp_dim {fp_dim} must be divisible by n_heads {n_heads}")
+
+        self.fp_dim = fp_dim
+        self.n_heads = n_heads
+        self.hidden_dim = fp_dim // n_heads
+
+        self.mlp_in = nn.Sequential(
+            nn.Linear(fp_dim, fp_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(fp_dim, fp_dim),
+            nn.Dropout(dropout)
+        )
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.hidden_dim,
+            nhead=n_heads,
+            dim_feedforward=transformer_ff_dim,
+            dropout=dropout,
+            activation="relu",
+            layer_norm_eps=layer_norm_eps,
+            batch_first=False
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+
+    def forward(self, y: torch.Tensor) -> torch.Tensor:
+        y_fp = y[:, :self.fp_dim]               # [bsz, fp_dim]
+        y_rem = y[:, self.fp_dim:]              # [bsz, input_dim - fp_dim]
+
+        y_fp = self.mlp_in(y_fp)                # [bsz, n_heads * hidden_dim]
+
+        bsz = y_fp.size(0)
+        y_fp = y_fp.view(bsz, self.n_heads, self.hidden_dim).permute(1, 0, 2)   # [n_heads, bsz, hidden_dim]
+
+        y_fp = self.transformer_encoder(y_fp)                                   # [n_heads, bsz, hidden_dim]
+
+        y_fp = y_fp.permute(1, 0, 2).contiguous().view(bsz, self.n_heads * self.hidden_dim)     # [bsz, fp_dim]
+
+        out = torch.cat([y_fp, y_rem], dim=-1)                # [bsz, input_dim]
+
+        return out

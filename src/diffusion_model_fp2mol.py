@@ -13,7 +13,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
-from models.transformer_model import GraphTransformer
+from models.transformer_model import GraphTransformer, GraphTransformerV2
 from diffusion.noise_schedule import DiscreteUniformTransition, PredefinedNoiseScheduleDiscrete,\
     MarginalUniformTransition
 from src.diffusion import diffusion_utils
@@ -78,13 +78,29 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
         self.extra_features = extra_features
         self.domain_features = domain_features
 
-        self.model = GraphTransformer(n_layers=cfg.model.n_layers,
-                                      input_dims=input_dims,
-                                      hidden_mlp_dims=cfg.model.hidden_mlp_dims,
-                                      hidden_dims=cfg.model.hidden_dims,
-                                      output_dims=output_dims,
-                                      act_fn_in=nn.ReLU(),
-                                      act_fn_out=nn.ReLU())
+        if self.cfg.model.model == 'graph_tf':
+            self.model = GraphTransformer(n_layers=cfg.model.n_layers,
+                                        input_dims=input_dims,
+                                        hidden_mlp_dims=cfg.model.hidden_mlp_dims,
+                                        hidden_dims=cfg.model.hidden_dims,
+                                        output_dims=output_dims,
+                                        act_fn_in=nn.ReLU(),
+                                        act_fn_out=nn.ReLU())
+        elif self.cfg.model.model == 'graph_tf_v2':
+            self.model = GraphTransformerV2(
+                n_layers=cfg.model.n_layers,
+                input_dims=input_dims,
+                hidden_mlp_dims=cfg.model.hidden_mlp_dims,
+                hidden_dims=cfg.model.hidden_dims,
+                output_dims=output_dims,
+                act_fn_in=nn.ReLU(),
+                act_fn_out=nn.ReLU(),
+                y_encoder_fp_dim=cfg.dataset.morgan_nbits,
+                y_encoder_n_heads=cfg.model.graph_tf_y_transformer_n_heads,
+                y_encoder_transformer_ff_dim=cfg.model.graph_tf_y_transformer_ff_dim,
+                y_encoder_num_layers=cfg.model.graph_tf_y_transformer_n_layers,
+                y_encoder_dropout=cfg.model.graph_tf_y_transformer_dropout,         
+            )
         
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(cfg.model.diffusion_noise_schedule, timesteps=cfg.model.diffusion_steps)
         self.denoise_nodes = getattr(cfg.dataset, 'denoise_nodes', True)
