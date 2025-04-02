@@ -46,7 +46,7 @@ bash data_processing/03_preprocess_fp2mol.sh
 
 ## Pretrained Checkpoints
 
-We provide checkpoints for the end-to-end finetuned DiffMS model as well as the pretrained encoder/decoder weights (here)[https://zenodo.org/records/15122968].
+We provide checkpoints for the end-to-end finetuned DiffMS model as well as the pretrained encoder/decoder weights [here](https://zenodo.org/records/15122968).
 
 ## Run the code
   
