@@ -139,6 +139,8 @@ archives/*
 results/*
 
 checkpoints/*
+checkpoints_internal/*
+checkpoints_save/*
 notebooks/data/*
 data/
 data2/

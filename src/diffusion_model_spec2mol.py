@@ -86,18 +86,21 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
                                       act_fn_in=nn.ReLU(),
                                       act_fn_out=nn.ReLU())
 
-        if cfg.general.decoder is not None:
-            state_dict = torch.load(cfg.general.decoder, map_location='cpu')
-            if 'state_dict' in state_dict:
-                state_dict = state_dict['state_dict']
-                
-            cleaned_state_dict = {}
-            for k, v in state_dict.items():
-                if k.startswith('model.'):
-                    k = k[6:]
-                    cleaned_state_dict[k] = v
+        try:
+            if cfg.general.decoder is not None:
+                state_dict = torch.load(cfg.general.decoder, map_location='cpu')
+                if 'state_dict' in state_dict:
+                    state_dict = state_dict['state_dict']
+                    
+                cleaned_state_dict = {}
+                for k, v in state_dict.items():
+                    if k.startswith('model.'):
+                        k = k[6:]
+                        cleaned_state_dict[k] = v
 
-            self.decoder.load_state_dict(cleaned_state_dict)
+                self.decoder.load_state_dict(cleaned_state_dict)
+        except Exception as e:
+            logging.info(f"Could not load decoder: {e}")
 
         hidden_size = 256
         try:
@@ -132,8 +135,11 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
                         magma_modulo=magma_modulo,
                     )
         
-        if cfg.general.encoder is not None:
-            self.encoder.load_state_dict(torch.load(cfg.general.encoder), strict=True)
+        try:
+            if cfg.general.encoder is not None:
+                self.encoder.load_state_dict(torch.load(cfg.general.encoder), strict=True)
+        except Exception as e:
+            logging.info(f"Could not load encoder: {e}")
 
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(cfg.model.diffusion_noise_schedule, timesteps=cfg.model.diffusion_steps)
         self.denoise_nodes = getattr(cfg.dataset, 'denoise_nodes', False)
@@ -595,7 +601,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
            X, E, y : (bs, n, dx),  (bs, n, n, de), (bs, dy)
            node_mask : (bs, n)
            Output: nll (size 1)
-       """
+        """
         t = noisy_data['t']
 
         # 1.

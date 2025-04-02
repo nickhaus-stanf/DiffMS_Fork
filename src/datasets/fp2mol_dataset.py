@@ -147,53 +147,12 @@ class FP2MolDataset(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        if self.dataset == 'hmdb':
-            return ['hmdb_train.csv', 'hmdb_val.csv']
-        elif self.dataset == 'dss':
-            return ['dss_train.csv', 'dss_val.csv']
-        elif self.dataset == 'coconut':
-            return ['coconut_train.csv', 'coconut_val.csv']
-        elif self.dataset == 'combined':
-            return ['combined_train.csv', 'combined_val.csv']
-        elif self.dataset == 'moses':
-            return ['moses_train.csv', 'moses_val.csv']
-        elif self.dataset == 'combined_moses':
-            return ['combined_moses_train.csv', 'combined_moses_val.csv']
-        elif self.dataset == 'canopus':
-            return ['canopus_train.csv', 'canopus_val.csv']
-        elif self.dataset == 'smml':
-            return ['smml_train.csv', 'smml_val.csv']
-        elif self.dataset == 'combined_smml':
-            return ['combined_smml_train.csv', 'combined_smml_val.csv']
-        elif self.dataset == 'msg':
-            return ['msg_train.csv', 'msg_test.csv']
-        else:
-            raise ValueError(f"Unkown Dataset {self.dataset}")
+        return [f"{self.dataset}_train.csv", f"{self.dataset}_val.csv"]
 
     @property
     def split_file_name(self):
-        if self.dataset == 'hmdb':
-            return ['hmdb_train.csv', 'hmdb_val.csv']
-        elif self.dataset == 'dss':
-            return ['dss_train.csv', 'dss_val.csv']
-        elif self.dataset == 'coconut':
-            return ['coconut_train.csv', 'coconut_val.csv']
-        elif self.dataset == 'combined':
-            return ['combined_train.csv', 'combined_val.csv']
-        elif self.dataset == 'moses':
-            return ['moses_train.csv', 'moses_val.csv']
-        elif self.dataset == 'combined_moses':
-            return ['combined_moses_train.csv', 'combined_moses_val.csv']
-        elif self.dataset == 'canopus':
-            return ['canopus_train.csv', 'canopus_val.csv']
-        elif self.dataset == 'smml':
-            return ['smml_train.csv', 'smml_val.csv']
-        elif self.dataset == 'combined_smml':
-            return ['combined_smml_train.csv', 'combined_smml_val.csv']
-        elif self.dataset == 'msg':
-            return ['msg_train.csv', 'msg_test.csv']
-        else:
-            raise ValueError(f"Unkown Dataset {self.dataset}")
+        return [f"{self.dataset}_train.csv", f"{self.dataset}_val.csv"]
+
 
     @property
     def split_paths(self):

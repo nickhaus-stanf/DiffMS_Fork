@@ -31,7 +31,8 @@ def get_resume(cfg, model_kwargs):
     saved_cfg = cfg.copy()
     name = cfg.general.name + '_resume'
     resume = cfg.general.test_only
-    samples_to_generate = cfg.general.samples_to_generate
+    val_samples_to_generate = cfg.general.val_samples_to_generate
+    test_samples_to_generate = cfg.general.test_samples_to_generate
     if cfg.model.type == 'discrete':
         model = FP2MolDenoisingDiffusion.load_from_checkpoint(resume, **model_kwargs)
     else:
@@ -39,7 +40,8 @@ def get_resume(cfg, model_kwargs):
     cfg = model.cfg
     cfg.general.test_only = resume
     cfg.general.name = name
-    cfg.general.samples_to_generate = samples_to_generate
+    cfg.general.val_samples_to_generate = val_samples_to_generate
+    cfg.general.test_samples_to_generate = test_samples_to_generate
     cfg = utils.update_config_with_new_keys(cfg, saved_cfg)
     return cfg, model
 

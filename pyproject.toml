@@ -22,7 +22,8 @@ dependencies = [
     "wandb",
     "h5py",
     "seaborn",
-    "myopic-mces"
+    "myopic-mces",
+    "tqdm-joblib",
 ]
 authors = [
     {name = "Montgomery Bohde", email = "mbohde@tamu.edu"},
