@@ -161,6 +161,41 @@ class Mol(object):
 
         return cls(mol=mol, smiles=smiles, **kwargs)
 
+    @classmethod
+    def MolFromFormula(cls, formula: str, **kwargs):
+        """
+        Create a Mol object from a chemical formula.
+        This creates a molecule with atoms but no bonds.
+            
+        Args:
+            formula (str): Chemical formula (e.g., "C6H12O6")
+            inchikey (str, optional): InChIKey for the molecule. Defaults to None.
+            
+        Returns:
+            Mol: Molecule object with atoms but no bonds
+        """            
+        # Regular expression to extract element symbols and counts from the formula
+        pattern = r'([A-Z][a-z]*)(\d*)'
+        matches = re.findall(pattern, formula)
+            
+        # Create an empty molecule
+        mol = Chem.RWMol()
+            
+        # Add atoms to the molecule
+        for element, count in matches:
+            # If no count is specified, default to 1
+            count = int(count) if count else 1
+                
+            # Get atomic number for the element
+            atomic_num = Chem.GetPeriodicTable().GetAtomicNumber(element)
+                
+            # Add the atoms to the molecule
+            for _ in range(count):
+                atom = Chem.Atom(atomic_num)
+                mol.AddAtom(atom)
+            
+        return cls(mol=mol, mol_formula=formula, **kwargs)
+
     def get_smiles(self) -> str:
         """_summary_
 
