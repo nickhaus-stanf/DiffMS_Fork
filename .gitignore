@@ -132,7 +132,6 @@ dmypy.json
 .DS_Store
 .idea/
 __pycache__/
-/data/
 outputs/
 archives/*
 .env
@@ -143,8 +142,7 @@ checkpoints/*
 checkpoints_internal/*
 checkpoints_save/*
 notebooks/data/*
-data/
-data2/
+data/*
 
 __pycache__/
 **/__pycache__/
