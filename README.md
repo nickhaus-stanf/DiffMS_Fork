@@ -52,7 +52,7 @@ To finetune the end-to-end model on spectra-molecule generation, run [fp2mol_mai
 
 ## Pretrained Checkpoints
 
-We provide checkpoints for the end-to-end finetuned DiffMS model as well as the pretrained encoder/decoder weights (here)[https://zenodo.org/records/15122968].
+We provide checkpoints for the end-to-end finetuned DiffMS model as well as the pretrained encoder/decoder weights [here](https://zenodo.org/records/15122968).
 
 To load the pretrained DiffMS weights, set the load_weights argument in [general_default.yaml](configs/general/general_default.yaml) to the corresponding path. To use the pretrained encoder/decoder set the corresponding arguments in [general_default.yaml](configs/general/general_default.yaml).
 
