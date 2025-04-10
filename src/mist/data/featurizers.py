@@ -832,7 +832,6 @@ class PeakFormula(SpecFeaturizer):
         peak_dict = self._get_peak_dict(spec)
 
         # Augment peak dict with chem formulae
-        peak_dict_new = {}
         if train_mode and self.augment_data:
             # Only augment certain select peaks
             augment_peak = np.random.random() < self.augment_prob

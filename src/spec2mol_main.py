@@ -35,14 +35,16 @@ def get_resume(cfg, model_kwargs):
     saved_cfg = cfg.copy()
     name = cfg.general.name + '_resume'
     resume = cfg.general.test_only
-    samples_to_generate = cfg.general.samples_to_generate
+    val_samples_to_generate = cfg.general.val_samples_to_generate
+    test_samples_to_generate = cfg.general.test_samples_to_generate
 
     model = Spec2MolDenoisingDiffusion.load_from_checkpoint(resume, **model_kwargs)
 
     cfg = model.cfg
     cfg.general.test_only = resume
     cfg.general.name = name
-    cfg.general.samples_to_generate = samples_to_generate
+    cfg.general.val_samples_to_generate = val_samples_to_generate
+    cfg.general.test_samples_to_generate = test_samples_to_generate
     cfg = utils.update_config_with_new_keys(cfg, saved_cfg)
     return cfg, model
 
@@ -130,6 +132,32 @@ def apply_decoder_finetuning(model, strategy):
                 p[1].requires_grad = False
     else:
         raise NotImplementedError(f'Unknown Finetune Strategy: {strategy}')
+
+def load_weights(model, path):
+    """
+    Loads only the weights from a checkpoint file into the model without loading the full Lightning module.
+    
+    Args:
+        model: The model to load weights into
+        path: Path to the checkpoint file
+        
+    Returns:
+        The model with loaded weights
+    """
+    checkpoint = torch.load(path, map_location='cpu')
+    state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
+    
+    # Filter out keys that don't match the model (for partial loading)
+    model_state_dict = model.state_dict()
+    filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
+    
+    # Load the weights
+    missing_keys, unexpected_keys = model.load_state_dict(filtered_state_dict, strict=False)
+    logging.info(f"Loaded weights from {path}")
+    logging.info(f"Missing keys: {missing_keys}")
+    logging.info(f"Unexpected keys: {unexpected_keys}")
+    
+    return model
 
 @hydra.main(version_base='1.3', config_path='../configs', config_name='config')
 def main(cfg: DictConfig):
@@ -246,6 +274,10 @@ def main(cfg: DictConfig):
 
     apply_encoder_finetuning(model, cfg.general.encoder_finetune_strategy)
     apply_decoder_finetuning(model, cfg.general.decoder_finetune_strategy)
+
+    if cfg.general.load_weights is not None:
+        logging.info(f"Loading weights from {cfg.general.load_weights}")
+        model = load_weights(model, cfg.general.load_weights)
 
     if not cfg.general.test_only:
         trainer.fit(model, datamodule=datamodule, ckpt_path=cfg.general.resume)
