@@ -44,15 +44,17 @@ bash data_processing/02_download_msg_data.sh
 bash data_processing/03_preprocess_fp2mol.sh
 ```
 
+## Run the code
+  
+For fingerprint-molecule pretraining run [fp2mol_main.py](src/fp2mol_main.py). You will need to set the dataset in [config.yaml](configs/config.yaml) to 'fp2mol'. The primary pretraining dataset in our paper is referred to as 'combined' in the [fp2mol.yaml](configs/dataset/fp2mol.yaml) config. 
+
+To finetune the end-to-end model on spectra-molecule generation, run [fp2mol_main.py](src/spec2mol_main.py). You will also need to set the dataset in [config.yaml](configs/config.yaml) to 'msg' for MassSpecGym or 'canopus' for NPLIB1. 
+
 ## Pretrained Checkpoints
 
 We provide checkpoints for the end-to-end finetuned DiffMS model as well as the pretrained encoder/decoder weights [here](https://zenodo.org/records/15122968).
 
-## Run the code
-  
-For fingerprint-molecule pretraining run [fp2mol_main.py](src/fp2mol_main.py). You will need to set the dataset in config.yaml to 'fp2mol'. The primary pretraining dataset in our paper is referred to as 'combined' in the fp2mol.yaml config. 
-
-To finetune the end-to-end model on spectra-molecule generation, run [spec2mol_main.py](src/spec2mol_main.py). You will also need to set the dataset in config.yaml to 'msg' for MassSpecGym or 'canopus' for NPLIB1. You can specify checkpoints for the pretrained encoder/decoder in general_default.yaml. We are planning to make pretrained checkpoints available soon. 
+To load the pretrained DiffMS weights, set the load_weights argument in [general_default.yaml](configs/general/general_default.yaml) to the corresponding path. To use the pretrained encoder/decoder set the corresponding arguments in [general_default.yaml](configs/general/general_default.yaml).
 
 ## License
 
