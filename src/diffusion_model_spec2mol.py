@@ -267,7 +267,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.val_sim_metrics.reset()
         self.val_validity.reset()
         self.val_CE.reset()
-        self.val_counter += 1
+        if self.global_rank == 0:
+            self.val_counter += 1
 
     def validation_step(self, batch, i):
         output, aux = self.encoder(batch)
@@ -305,7 +306,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         self.val_CE(flat_pred_E, flat_true_E)
 
-        '''if self.val_counter % self.cfg.general.sample_every_val == 0:
+        if self.val_counter % self.cfg.general.sample_every_val == 0:
             true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
             predicted_mols = [list() for _ in range(len(data))]
             for _ in range(self.val_num_samples):
@@ -315,7 +316,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
             for idx in range(len(data)):
                 self.val_k_acc.update(predicted_mols[idx], true_mols[idx])
                 self.val_sim_metrics.update(predicted_mols[idx], true_mols[idx])
-                self.val_validity.update(predicted_mols[idx])'''
+                self.val_validity.update(predicted_mols[idx])
 
         return {'loss': nll}
 
@@ -338,12 +339,12 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
             "val/E_CE": metrics[5]
         }
 
-        '''if self.val_counter % self.cfg.general.sample_every_val == 0:
+        if self.val_counter % self.cfg.general.sample_every_val == 0:
             for key, value in self.val_k_acc.compute().items():
                 log_dict[f"val/{key}"] = value
             for key, value in self.val_sim_metrics.compute().items():
                 log_dict[f"val/{key}"] = value
-            log_dict["val/validity"] = self.val_validity.compute()'''
+            log_dict["val/validity"] = self.val_validity.compute()
 
         self.log_dict(log_dict, sync_dist=True)
 
@@ -413,7 +414,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         with open(f"preds/{self.name}_rank_{self.global_rank}_pred_{i}.pkl", "wb") as f:
             pickle.dump(predicted_mols, f)
-        with open(f"preds/{self.name}_rank_{self.global_rank}_{i}.pkl", "wb") as f:
+        with open(f"preds/{self.name}_rank_{self.global_rank}_true_{i}.pkl", "wb") as f:
             pickle.dump(true_mols, f)
         
         for idx in range(len(data)):
