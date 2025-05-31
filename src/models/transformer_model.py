@@ -702,3 +702,64 @@ class FPMultiHeadAttention(nn.Module):
         out = torch.cat([y_fp, y_rem], dim=-1)                # [bsz, input_dim]
 
         return out
+
+class GraphTransformerV4(nn.Module):
+    """
+    n_layers : int -- number of layers
+    dims : dict -- contains dimensions for each feature type
+    """
+    def __init__(self, n_layers: int, input_dims: dict, hidden_mlp_dims: dict, hidden_dims: dict,
+                 output_dims: dict, act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU(), **kwargs):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dim_X = output_dims['X']
+        self.out_dim_E = output_dims['E']
+        self.out_dim_y = output_dims['y']
+
+        self.mlp_in_X = nn.Sequential(nn.Linear(input_dims['X'], hidden_mlp_dims['X']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['X'], hidden_dims['dx']), act_fn_in)
+
+        self.mlp_in_E = nn.Sequential(nn.Linear(input_dims['E'], hidden_mlp_dims['E']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['E'], hidden_dims['de']), act_fn_in)
+
+        self.mlp_in_y = nn.Sequential(nn.Linear(input_dims['y'], hidden_mlp_dims['y']), act_fn_in,
+                                      nn.Linear(hidden_mlp_dims['y'], hidden_dims['dy']), act_fn_in)
+
+        self.tf_layers = nn.ModuleList([XEyTransformerLayer(dx=hidden_dims['dx'],
+                                                            de=hidden_dims['de'],
+                                                            dy=hidden_dims['dy'],
+                                                            n_head=hidden_dims['n_head'],
+                                                            dim_ffX=hidden_dims['dim_ffX'],
+                                                            dim_ffE=hidden_dims['dim_ffE'],
+                                                            dim_ffy=hidden_dims['dim_ffy'],)
+                                        for i in range(n_layers)])
+
+        self.mlp_out_X = nn.Sequential(nn.Linear(hidden_dims['dx'], hidden_mlp_dims['X']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['X'], output_dims['X']))
+
+        self.mlp_out_E = nn.Sequential(nn.Linear(hidden_dims['de'], hidden_mlp_dims['E']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['E'], output_dims['E']))
+
+        self.mlp_out_y = nn.Sequential(nn.Linear(hidden_dims['dy'], hidden_mlp_dims['y']), act_fn_out,
+                                       nn.Linear(hidden_mlp_dims['y'], output_dims['y']))
+
+    def forward(self, X, E, y, node_mask):
+        bs, n = X.shape[0], X.shape[1]
+
+        diag_mask = torch.eye(n)
+        diag_mask = ~diag_mask.type_as(E).bool()
+        diag_mask = diag_mask.unsqueeze(0).unsqueeze(-1).expand(bs, -1, -1, -1)
+
+        new_E = self.mlp_in_E(E)
+        new_E = (new_E + new_E.transpose(1, 2)) / 2
+        after_in = utils.PlaceHolder(X=self.mlp_in_X(X), E=new_E, y=self.mlp_in_y(y)).mask(node_mask)
+        X, E, y = after_in.X, after_in.E, after_in.y
+
+        for layer in self.tf_layers:
+            X, E, y = layer(X, E, y, node_mask)
+
+        E = self.mlp_out_E(E)
+
+        E = 1/2 * (E + torch.transpose(E, 1, 2))
+
+        return utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)

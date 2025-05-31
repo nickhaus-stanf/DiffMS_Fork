@@ -80,13 +80,6 @@ def load_decoder_from_lightning_ckpt(model, ckpt_path):
     model.model.load_state_dict(cleaned_state_dict, strict=True)
     logging.info(f"Loaded model from: '{ckpt_path}'")
 
-def freeze_weights(model, cfg):
-    if cfg.general.finetune_strategy == 'freeze_transformer_layers':
-        for param in model.model.tf_layers.parameters():
-            param.requires_grad = False
-    else:
-        raise NotImplementedError("Unknown finetuning strategy")
-
 
 @hydra.main(version_base='1.3', config_path='../configs', config_name='config')
 def main(cfg: DictConfig):
@@ -158,41 +151,13 @@ def main(cfg: DictConfig):
         except:
             logging.info("Could not change directory to resume path. Using current directory.")
 
-    try:
-        os.makedirs('preds/')
-    except OSError:
-        pass
-    try:
-        os.makedirs('models/')
-    except OSError:
-        pass
-    try:
-        os.makedirs('logs/')
-    except OSError:
-        pass
-
-    try:
-        os.makedirs('logs/' + cfg.general.name)
-    except OSError:
-        pass
+    os.makedirs('preds/', exist_ok=True)
+    os.makedirs('models/', exist_ok=True)
+    os.makedirs('logs/', exist_ok=True)
+    os.makedirs('logs/' + cfg.general.name, exist_ok=True)
 
     model = FP2MolDenoisingDiffusion(cfg=cfg, **model_kwargs)
-    
-    try:
-        if cfg.general.pretrained is not None:
-            if cfg.general.pretrained.endswith('.ckpt'):
-                load_decoder_from_lightning_ckpt(model, cfg.general.pretrained)
-            else:
-                raise NotImplementedError("Only PyTorch Lightning checkpoints currently supported!")
-    except Exception as e:
-        print("Could not load pretrained model:", e)
             
-    try:
-        if cfg.general.finetune_strategy is not None:
-            freeze_weights(model, cfg)
-    except Exception as e:
-        print("Could not freeze weights:", e)
-        
     callbacks = []
     callbacks.append(LearningRateMonitor(logging_interval='step'))
     if cfg.train.save_model:

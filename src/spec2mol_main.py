@@ -29,7 +29,7 @@ from src.datasets import spec2mol_dataset
 
 warnings.filterwarnings("ignore", category=PossibleUserWarning)
 
-
+# TODO: refactor how configs are resumed (need old cfg.model and cfg.train but probably not general)
 def get_resume(cfg, model_kwargs):
     """ Resumes a run. It loads previous config without allowing to update keys (used for testing). """
     saved_cfg = cfg.copy()
@@ -37,6 +37,7 @@ def get_resume(cfg, model_kwargs):
     resume = cfg.general.test_only
     val_samples_to_generate = cfg.general.val_samples_to_generate
     test_samples_to_generate = cfg.general.test_samples_to_generate
+    gpus = cfg.general.gpus
 
     model = Spec2MolDenoisingDiffusion.load_from_checkpoint(resume, **model_kwargs)
 
@@ -45,6 +46,7 @@ def get_resume(cfg, model_kwargs):
     cfg.general.name = name
     cfg.general.val_samples_to_generate = val_samples_to_generate
     cfg.general.test_samples_to_generate = test_samples_to_generate
+    cfg.general.gpus = gpus
     cfg = utils.update_config_with_new_keys(cfg, saved_cfg)
     return cfg, model
 
@@ -212,25 +214,15 @@ def main(cfg: DictConfig):
     if cfg.general.test_only:
         # When testing, previous configuration is fully loaded
         cfg, _ = get_resume(cfg, model_kwargs)
-        os.chdir(cfg.general.test_only.split('checkpoints')[0])
+        #os.chdir(cfg.general.test_only.split('checkpoints')[0])
     elif cfg.general.resume is not None:
         # When resuming, we can override some parts of previous configuration
         cfg, _ = get_resume_adaptive(cfg, model_kwargs)
-        os.chdir(cfg.general.resume.split('checkpoints')[0])
+        #os.chdir(cfg.general.resume.split('checkpoints')[0])
 
-    try:
-        os.makedirs('preds/')
-    except OSError:
-        pass
-    try:
-        os.makedirs('logs/')
-    except OSError:
-        pass
-
-    try:
-        os.makedirs('logs/' + cfg.general.name)
-    except OSError:
-        pass
+    os.makedirs('preds/', exist_ok=True)
+    os.makedirs('logs/', exist_ok=True)
+    os.makedirs('logs/' + cfg.general.name, exist_ok=True)
 
     model = Spec2MolDenoisingDiffusion(cfg=cfg, **model_kwargs)
 

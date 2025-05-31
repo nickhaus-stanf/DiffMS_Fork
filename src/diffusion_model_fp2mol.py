@@ -13,7 +13,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
-from models.transformer_model import GraphTransformer, GraphTransformerV2, GraphTransformerV3
+from models.transformer_model import GraphTransformer, GraphTransformerV2, GraphTransformerV3, GraphTransformerV4
 from diffusion.noise_schedule import DiscreteUniformTransition, PredefinedNoiseScheduleDiscrete,\
     MarginalUniformTransition
 from src.diffusion import diffusion_utils
@@ -116,6 +116,18 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
                 y_encoder_num_layers=cfg.model.graph_tf_y_transformer_n_layers,
                 y_encoder_dropout=cfg.model.graph_tf_y_transformer_dropout,         
             )
+        elif self.cfg.model.model == 'graph_tf_v4':
+            self.model = GraphTransformerV4(
+                n_layers=cfg.model.n_layers,
+                input_dims=input_dims,
+                hidden_mlp_dims=cfg.model.hidden_mlp_dims,
+                hidden_dims=cfg.model.hidden_dims,
+                output_dims=output_dims,
+                act_fn_in=nn.ReLU(),
+                act_fn_out=nn.ReLU()
+            )
+        else:
+            raise ValueError(f"Unknown model type {self.cfg.model.model}")
         
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(cfg.model.diffusion_noise_schedule, timesteps=cfg.model.diffusion_steps)
         self.denoise_nodes = getattr(cfg.dataset, 'denoise_nodes', True)
@@ -148,10 +160,9 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
         self.best_val_nll = 1e8
         self.val_counter = 1
 
+        logging.info(f"Finished initializing FP2MolDenoisingDiffusion on GPU {self.device}")
+
     def training_step(self, data, i):
-        if data.edge_index.numel() == 0:
-            logging.info("Found a batch with no edges. Skipping.")
-            return
         dense_data, node_mask = utils.to_dense(data.x, data.edge_index, data.edge_attr, data.batch)
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
@@ -187,8 +198,9 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
             raise ValueError('Unknown Scheduler')
 
     def on_fit_start(self) -> None:
+        if self.global_rank == 0:
+            logging.info(f"Size of the input features: X-{self.Xdim}, E-{self.Edim}, y-{self.ydim}")
         self.train_iterations = len(self.trainer.datamodule.train_dataloader())
-        logging.info(f"Size of the input features: X-{self.Xdim}, E-{self.Edim}, y-{self.ydim}")
         
     def on_train_epoch_start(self) -> None:
         self.start_epoch_time = time.time()
@@ -208,7 +220,8 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
             to_log[f"train_epoch/{key}"] = value
 
         self.log_dict(to_log, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: X_CE: {to_log['train_epoch/x_CE']:.2f} -- E_CE: {to_log['train_epoch/E_CE']:.2f} -- time: {to_log['train_epoch/time']:.2f}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: X_CE: {to_log['train_epoch/x_CE']:.2f} -- E_CE: {to_log['train_epoch/E_CE']:.2f} -- time: {to_log['train_epoch/time']:.2f}")
 
     def on_validation_epoch_start(self) -> None:
         self.val_nll.reset()
@@ -243,7 +256,7 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
 
         self.val_CE(flat_pred_E, flat_true_E)
 
-        if self.val_counter % self.cfg.general.sample_every_val == 0 and i < 5:
+        '''if self.val_counter % self.cfg.general.sample_every_val == 0:
             true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
             predicted_mols = [list() for _ in range(len(data))]
             for _ in range(self.val_num_samples):
@@ -253,7 +266,7 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
             for idx in range(len(data)):
                 self.val_k_acc.update(predicted_mols[idx], true_mols[idx])
                 self.val_sim_metrics.update(predicted_mols[idx], true_mols[idx])
-                self.val_validity.update(predicted_mols[idx])
+                self.val_validity.update(predicted_mols[idx])'''
 
         return {'loss': nll}
 
@@ -276,28 +289,31 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
             "val/E_CE": metrics[5]
         }
 
-        if self.val_counter % self.cfg.general.sample_every_val == 0:
+        '''if self.val_counter % self.cfg.general.sample_every_val == 0:
             for key, value in self.val_k_acc.compute().items():
                 log_dict[f"val/{key}"] = value
             for key, value in self.val_sim_metrics.compute().items():
                 log_dict[f"val/{key}"] = value
-            log_dict["val/validity"] = self.val_validity.compute()
+            log_dict["val/validity"] = self.val_validity.compute()'''
 
         self.log_dict(log_dict, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: Val NLL {metrics[0] :.2f} -- Val Atom type KL: {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f} -- Val Edge type logp: {metrics[4] :.2f} -- Val Edge type CE: {metrics[5] :.2f}")
 
-        val_nll = metrics[0]
-        if val_nll < self.best_val_nll:
-            self.best_val_nll = val_nll
-        logging.info(f"Val NLL: {val_nll :.4f} \t Best Val NLL:  {self.best_val_nll}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: Val NLL {metrics[0] :.2f} -- Val Atom type KL: {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f} -- Val Edge type logp: {metrics[4] :.2f} -- Val Edge type CE: {metrics[5] :.2f}")
 
-        # save self.model to models/graph_transformer_{epoch}.pt
-        torch.save(self.model.state_dict(), f"models/graph_transformer_{self.current_epoch}.pt")
-        with open(f"models/graph_transformer_{self.current_epoch}.pkl", "wb") as f:
-            pickle.dump(self.model, f)
+            val_nll = metrics[0]
+            if val_nll < self.best_val_nll:
+                self.best_val_nll = val_nll
+            logging.info(f"Val NLL: {val_nll :.4f} \t Best Val NLL:  {self.best_val_nll}")
+
+            # save self.model to models/graph_transformer_{epoch}.pt
+            torch.save(self.model.state_dict(), f"models/graph_transformer_{self.current_epoch}.pt")
+            with open(f"models/graph_transformer_{self.current_epoch}.pkl", "wb") as f:
+                pickle.dump(self.model, f)
 
     def on_test_epoch_start(self) -> None:
-        logging.info("Starting test...")
+        if self.global_rank == 0:
+            logging.info("Starting test...")
         self.test_nll.reset()
         self.test_X_kl.reset()
         self.test_E_kl.reset()
@@ -335,12 +351,12 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
             for idx, mol in enumerate(self.sample_batch(data)):
                 predicted_mols[idx].append(mol)
 
-        with open(f"preds/{self.name}_pred_{i}.pkl", "wb") as f:
+        with open(f"preds/{self.name}_rank_{self.global_rank}_pred_{i}.pkl", "wb") as f:
             pickle.dump(predicted_mols, f)
-        with open(f"preds/{self.name}_true_{i}.pkl", "wb") as f:
+        with open(f"preds/{self.name}_rank_{self.global_rank}_{i}.pkl", "wb") as f:
             pickle.dump(true_mols, f)
         
-        for idx in range(len(data)): # WARNING: THESE METRICS MAY FAIL ON MULTI-GPU
+        for idx in range(len(data)):
             self.test_k_acc.update(predicted_mols[idx], true_mols[idx])
             self.test_sim_metrics.update(predicted_mols[idx], true_mols[idx])
             self.test_validity.update(predicted_mols[idx])
@@ -368,7 +384,8 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
         }
 
         self.log_dict(log_dict, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: Test NLL {metrics[0] :.2f} -- Test Atom type KL {metrics[1] :.2f} -- Test Edge type KL: {metrics[2] :.2f} -- Test Edge type logp: {metrics[3] :.2f} -- Test Edge type CE: {metrics[5] :.2f}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: Test NLL {metrics[0] :.2f} -- Test Atom type KL {metrics[1] :.2f} -- Test Edge type KL: {metrics[2] :.2f} -- Test Edge type logp: {metrics[3] :.2f} -- Test Edge type CE: {metrics[5] :.2f}")
 
         log_dict = {}
         for key, value in self.test_k_acc.compute().items():
@@ -566,7 +583,7 @@ class FP2MolDenoisingDiffusion(pl.LightningModule):
         return self.model(X, E, y, node_mask)
     
     @torch.no_grad()
-    def sample_batch(self, batch: Batch) -> Batch:
+    def sample_batch(self, batch: Batch) -> list[Chem.Mol]:
         dense_data, node_mask = utils.to_dense(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
 
         z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
