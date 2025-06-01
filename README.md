@@ -44,6 +44,8 @@ bash data_processing/02_download_msg_data.sh
 bash data_processing/03_preprocess_fp2mol.sh
 ```
 
+These scripts use unzip, which can be installed with ```sudo apt-get install unzip``` on Linux. If you are on a different OS, you many need to edit these scripts or run the command manually.  
+
 ## Run the code
   
 For fingerprint-molecule pretraining run [fp2mol_main.py](src/fp2mol_main.py). You will need to set the dataset in [config.yaml](configs/config.yaml) to 'fp2mol'. The primary pretraining dataset in our paper is referred to as 'combined' in the [fp2mol.yaml](configs/dataset/fp2mol.yaml) config. 
