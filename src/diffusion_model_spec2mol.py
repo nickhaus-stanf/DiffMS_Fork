@@ -11,7 +11,6 @@ import pytorch_lightning as pl
 from torch_geometric.data import Batch
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from tqdm import tqdm
 
 from models.transformer_model import GraphTransformer
 from diffusion.noise_schedule import DiscreteUniformTransition, PredefinedNoiseScheduleDiscrete,\
@@ -234,8 +233,9 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
             raise ValueError('Unknown Scheduler')
 
     def on_fit_start(self) -> None:
+        if self.global_rank == 0:
+            logging.info(f"Size of the input features: X-{self.Xdim}, E-{self.Edim}, y-{self.ydim}")
         self.train_iterations = len(self.trainer.datamodule.train_dataloader())
-        logging.info(f"Size of the input features: X-{self.Xdim}, E-{self.Edim}, y-{self.ydim}")
         
     def on_train_epoch_start(self) -> None:
         self.start_epoch_time = time.time()
@@ -254,7 +254,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
             to_log[f"train_epoch/{key}"] = value
 
         self.log_dict(to_log, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: X_CE: {to_log['train_epoch/x_CE']:.2f} -- E_CE: {to_log['train_epoch/E_CE']:.2f} -- time: {to_log['train_epoch/time']:.2f}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: X_CE: {to_log['train_epoch/x_CE']:.2f} -- E_CE: {to_log['train_epoch/E_CE']:.2f} -- time: {to_log['train_epoch/time']:.2f}")
 
     def on_validation_epoch_start(self) -> None:
         self.val_nll.reset()
@@ -266,7 +267,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         self.val_sim_metrics.reset()
         self.val_validity.reset()
         self.val_CE.reset()
-        self.val_counter += 1
+        if self.global_rank == 0:
+            self.val_counter += 1
 
     def validation_step(self, batch, i):
         output, aux = self.encoder(batch)
@@ -345,16 +347,19 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
             log_dict["val/validity"] = self.val_validity.compute()
 
         self.log_dict(log_dict, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: Val NLL {metrics[0] :.2f} -- Val Atom type KL: {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f} -- Val Edge type logp: {metrics[4] :.2f} -- Val Edge type CE: {metrics[5] :.2f}")
 
-        val_nll = metrics[0]
-        if val_nll < self.best_val_nll:
-            self.best_val_nll = val_nll
-        logging.info(f"Val NLL: {val_nll :.4f} \t Best Val NLL:  {self.best_val_nll}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: Val NLL {metrics[0] :.2f} -- Val Atom type KL: {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f} -- Val Edge type logp: {metrics[4] :.2f} -- Val Edge type CE: {metrics[5] :.2f}")
+
+            val_nll = metrics[0]
+            if val_nll < self.best_val_nll:
+                self.best_val_nll = val_nll
+            logging.info(f"Val NLL: {val_nll :.4f} \t Best Val NLL:  {self.best_val_nll}")
 
     
     def on_test_epoch_start(self) -> None:
-        logging.info("Starting test...")
+        if self.global_rank == 0:
+            logging.info("Starting test...")
         self.test_nll.reset()
         self.test_X_kl.reset()
         self.test_E_kl.reset()
@@ -400,23 +405,22 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
 
         self.test_CE(flat_pred_E, flat_true_E)
 
-        if i <= math.ceil(self.cfg.general.num_test_samples / self.cfg.train.eval_batch_size):
-            true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
-            predicted_mols = [list() for _ in range(len(data))]
+        true_mols = [Chem.inchi.MolFromInchi(data.get_example(idx).inchi) for idx in range(len(data))] # Is this correct?
+        predicted_mols = [list() for _ in range(len(data))]
 
-            for _ in range(self.test_num_samples):
-                for idx, mol in enumerate(self.sample_batch(data)):
-                    predicted_mols[idx].append(mol)
+        for _ in range(self.test_num_samples):
+            for idx, mol in enumerate(self.sample_batch(data)):
+                predicted_mols[idx].append(mol)
 
-            with open(f"preds/{self.name}_pred_{i}.pkl", "wb") as f:
-                pickle.dump(predicted_mols, f)
-            with open(f"preds/{self.name}_true_{i}.pkl", "wb") as f:
-                pickle.dump(true_mols, f)
+        with open(f"preds/{self.name}_rank_{self.global_rank}_pred_{i}.pkl", "wb") as f:
+            pickle.dump(predicted_mols, f)
+        with open(f"preds/{self.name}_rank_{self.global_rank}_true_{i}.pkl", "wb") as f:
+            pickle.dump(true_mols, f)
         
-            for idx in range(len(data)):
-                self.test_k_acc.update(predicted_mols[idx], true_mols[idx])
-                self.test_sim_metrics.update(predicted_mols[idx], true_mols[idx])
-                self.test_validity.update(predicted_mols[idx])
+        for idx in range(len(data)):
+            self.test_k_acc.update(predicted_mols[idx], true_mols[idx])
+            self.test_sim_metrics.update(predicted_mols[idx], true_mols[idx])
+            self.test_validity.update(predicted_mols[idx])
 
         return {'loss': nll}
 
@@ -441,7 +445,8 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         }
 
         self.log_dict(log_dict, sync_dist=True)
-        logging.info(f"Epoch {self.current_epoch}: Test NLL {metrics[0] :.2f} -- Test Atom type KL {metrics[1] :.2f} -- Test Edge type KL: {metrics[2] :.2f} -- Test Edge type logp: {metrics[3] :.2f} -- Test Edge type CE: {metrics[5] :.2f}")
+        if self.global_rank == 0:
+            logging.info(f"Epoch {self.current_epoch}: Test NLL {metrics[0] :.2f} -- Test Atom type KL {metrics[1] :.2f} -- Test Edge type KL: {metrics[2] :.2f} -- Test Edge type logp: {metrics[3] :.2f} -- Test Edge type CE: {metrics[5] :.2f}")
 
         log_dict = {}
         for key, value in self.test_k_acc.compute().items():
@@ -648,7 +653,7 @@ class Spec2MolDenoisingDiffusion(pl.LightningModule):
         assert (E == torch.transpose(E, 1, 2)).all()
 
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
-        for s_int in tqdm(reversed(range(0, self.T)), leave=False):
+        for s_int in reversed(range(0, self.T)):
             s_array = s_int * torch.ones((len(data), 1), dtype=torch.float32, device=self.device)
             t_array = s_array + 1
             s_norm = s_array / self.T

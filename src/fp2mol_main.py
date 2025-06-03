@@ -55,10 +55,7 @@ def get_resume_adaptive(cfg, model_kwargs):
 
     resume_path = os.path.join(root_dir, cfg.general.resume)
 
-    if cfg.model.type == 'discrete':
-        model = FP2MolDenoisingDiffusion.load_from_checkpoint(resume_path, **model_kwargs)
-    else:
-        raise NotImplementedError("Only discrete diffusion models are supported for FP2Mol dataset currently")
+    model = FP2MolDenoisingDiffusion.load_from_checkpoint(resume_path, **model_kwargs)
     new_cfg = model.cfg
 
     for category in cfg:
@@ -82,13 +79,6 @@ def load_decoder_from_lightning_ckpt(model, ckpt_path):
 
     model.model.load_state_dict(cleaned_state_dict, strict=True)
     logging.info(f"Loaded model from: '{ckpt_path}'")
-
-def freeze_weights(model, cfg):
-    if cfg.general.finetune_strategy == 'freeze_transformer_layers':
-        for param in model.model.tf_layers.parameters():
-            param.requires_grad = False
-    else:
-        raise NotImplementedError("Unknown finetuning strategy")
 
 
 @hydra.main(version_base='1.3', config_path='../configs', config_name='config')
@@ -156,43 +146,18 @@ def main(cfg: DictConfig):
     elif cfg.general.resume is not None:
         # When resuming, we can override some parts of previous configuration
         cfg, _ = get_resume_adaptive(cfg, model_kwargs)
-        os.chdir(cfg.general.resume.split('checkpoints')[0])
+        try:
+            os.chdir(cfg.general.resume.split('checkpoints')[0])
+        except:
+            logging.info("Could not change directory to resume path. Using current directory.")
 
-    try:
-        os.makedirs('preds/')
-    except OSError:
-        pass
-    try:
-        os.makedirs('models/')
-    except OSError:
-        pass
-    try:
-        os.makedirs('logs/')
-    except OSError:
-        pass
-
-    try:
-        os.makedirs('logs/' + cfg.general.name)
-    except OSError:
-        pass
+    os.makedirs('preds/', exist_ok=True)
+    os.makedirs('models/', exist_ok=True)
+    os.makedirs('logs/', exist_ok=True)
+    os.makedirs('logs/' + cfg.general.name, exist_ok=True)
 
     model = FP2MolDenoisingDiffusion(cfg=cfg, **model_kwargs)
-    
-    try:
-        if cfg.general.pretrained is not None:
-            if cfg.general.pretrained.endswith('.ckpt'):
-                load_decoder_from_lightning_ckpt(model, cfg.general.pretrained)
-            else:
-                raise NotImplementedError("Only PyTorch Lightning checkpoints currently supported!")
-    except Exception as e:
-        print("Could not load pretrained model:", e)
             
-    try:
-        if cfg.general.finetune_strategy is not None:
-            freeze_weights(model, cfg)
-    except Exception as e:
-        print("Could not freeze weights:", e)
-        
     callbacks = []
     callbacks.append(LearningRateMonitor(logging_interval='step'))
     if cfg.train.save_model:
@@ -221,7 +186,7 @@ def main(cfg: DictConfig):
 
     use_gpu = cfg.general.gpus > 0 and torch.cuda.is_available()
     trainer = Trainer(gradient_clip_val=cfg.train.clip_grad,
-                      strategy="ddp",  # Needed to load old checkpoints
+                      strategy="ddp",
                       accelerator='gpu' if use_gpu else 'cpu',
                       devices=cfg.general.gpus if use_gpu else 1,
                       max_epochs=cfg.train.n_epochs,
