@@ -8,6 +8,11 @@ from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem import Descriptors
 
+# Added by me because DiffMS uses relative paths.
+# Go to a dummy folder to avoid issues with relative paths.
+import os
+os.chdir('/pscratch/sd/n/nishian/MS/DiffMS_Work/dummy/')
+
 random.seed(42)
 
 lg = RDLogger.logger()
