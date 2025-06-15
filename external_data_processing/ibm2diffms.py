@@ -340,7 +340,7 @@ def writeDiffMsSubformulaFile(save_dir: str, read_dir: str, name: str, req_data:
         'abs_mass_diff': list(), # Not sure what this is supposed to be
         'mass_diff': list(),  # Not sure what this is supposed to be
         'formula': list(req_data['fragments']),  # The fragments for the compound
-        'ion': [req_data['ion']] * len(req_data['mz'])  # The ionization of the compound, repeated for each fragment
+        'ions': [req_data['ion']] * len(req_data['mz'])  # The ionization of the compound, repeated for each fragment
     }
     subformula_data = {
         'cand_form': req_data['formula'],  # The formula of the compound
