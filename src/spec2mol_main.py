@@ -189,7 +189,10 @@ def main(cfg: DictConfig):
     dataset_config = cfg["dataset"]
 
     if dataset_config["name"] not in ("canopus", "msg"):
-        raise NotImplementedError("Unknown dataset {}".format(cfg["dataset"]))
+        # raise NotImplementedError("Unknown dataset {}".format(cfg["dataset"]))
+
+        # If dataset is not canopus or msg, throw a warning but continue
+        logging.warning("Unknown dataset {}. Continuing".format(cfg["dataset"]["name"])) 
 
     datamodule = spec2mol_dataset.Spec2MolDataModule(cfg) # TODO: Add hyper for n_bits
     dataset_infos = spec2mol_dataset.Spec2MolDatasetInfos(datamodule, cfg)
