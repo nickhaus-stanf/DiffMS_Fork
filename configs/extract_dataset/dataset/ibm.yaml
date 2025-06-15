@@ -1,0 +1,8 @@
+dataset_name: ibm
+read_dir: null # Where to read the raw data from
+save_dir: null # Where to save the processed data
+split_file: 80,10,10 # Path to the predefined split file OR a comma-delimited string of percentages for train, validation, and test splits
+split_name: splits.tsv # Name of the processed split file
+labels_name: labels.tsv # Name of the processed labels file
+ion_mode: positive # Ion mode for the dataset
+energy: 40 # Collision energy for the dataset
