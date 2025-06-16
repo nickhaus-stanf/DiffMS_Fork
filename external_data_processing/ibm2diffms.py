@@ -498,20 +498,22 @@ def extractIbmData(cfg, spec_dir: str, subformula_dir: str, helper_dir: str):
 
     num_chars = len(str(num_total_cmpds))  # Number of characters in the total number of compounds
     # Iterate through each file and extract the data using extractIbmChunkData generator
+    cmpd_idx = 0  # Index for the current compound
     for file in tqdm(all_files, desc='Extracting data from files'):
         data = pd.read_parquet(file, engine='pyarrow')
         data_generator = extractIbmChunkData(data, ion_mode=cfg.ion_mode, energy=cfg.energy)
-        for cmpd_i, cmpd_data in enumerate(data_generator):
-            cur_name = 'IBM' + str(cmpd_i).zfill(num_chars) # Create a left-padded name for the compound
+        for cmpd_data in data_generator:
+            cur_name = 'IBM' + str(cmpd_idx).zfill(num_chars) # Create a left-padded name for the compound
             # Write the helper file for the compound
             writeHelperFile(helper_dir, cur_name, cmpd_data)
             # Write the spectrum and subformula files for the compound
             writeCompoundDiffMsFiles(spec_dir, subformula_dir, cfg.read_dir, cur_name, cmpd_data)
+            cmpd_idx += 1  # Increment the compound index
     # After all files are processed, write the files that require the entire dataset to be processed
     createDatasetDiffMsFiles(cfg, helper_dir)
 #####################################################################################################################
     
-@hydra.main(version_base='1.1', config_path='./configs/extract_dataset', config_name='main')
+@hydra.main(version_base='1.1', config_path='../configs/extract_dataset', config_name='main')
 def main(cfg):
     # Make sure read and save directories are provided
     assert cfg.dataset.read_dir is not None, "Please provide a read directory for the dataset!"
