@@ -513,6 +513,10 @@ def extractIbmData(cfg, spec_dir: str, subformula_dir: str, helper_dir: str):
     
 @hydra.main(version_base='1.1', config_path='./configs/extract_dataset', config_name='main')
 def main(cfg):
+    # Make sure read and save directories are provided
+    assert cfg.dataset.read_dir is not None, "Please provide a read directory for the dataset!"
+    assert cfg.dataset.save_dir is not None, "Please provide a save directory for the dataset!"
+
     # Ensure the save directory exists
     if not os.path.exists(cfg.dataset.save_dir):
         os.makedirs(cfg.dataset.save_dir)
