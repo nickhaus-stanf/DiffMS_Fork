@@ -5,6 +5,7 @@ import json
 from tqdm import tqdm
 import rdkit.Chem as Chem
 from rdkit.Chem.Descriptors import ExactMolWt
+from rdkit.Chem.rdMolDescriptors import CalcMolFormula
 from rdkit.Chem import rdinchi
 import warnings
 import csv
@@ -146,7 +147,7 @@ def extrapolateCurrentData(req_data: dict):
 
     # SMILES can be used to extrapolate the formula
     if 'formula' in empty_fields:
-        req_data['formula'] = Chem.rdMolDescriptors.CalcMolFormula(mol)
+        req_data['formula'] = CalcMolFormula(mol)
 
     # SMILES can be used to extrapolate the mass
     if 'mass' in empty_fields:
@@ -454,14 +455,26 @@ def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
         if num_found_fragments != len(mz_values):
             warnings.warn(f"Not all fragments were found in the m/z values for compound {cmpd_i}! Skipping compound")
             continue  # Skip this compound if not all fragments were found
+        if np.any(relevant_fragments == ''):
+            warnings.warn(f"Some fragments were not found in the m/z values for compound {cmpd_i}! Skipping compound")
+            continue
 
+        # IBM fragments are given by SMILES -- convert to molecular formulae
+        fragment_formulas = list()  # List to store the formulas of the fragments
+        for frag in relevant_fragments:
+            mol = Chem.MolFromSmiles(frag, sanitize=False) # Ignore sanitization because fragments are ions with incorrect valence at times
+            mol.UpdatePropertyCache(strict=False) # Update the property cache to ensure the formula is correct
+            frag_formula = CalcMolFormula(mol)
+            fragment_formulas.append(frag_formula)
+        # Get rid of any ion tokens
+        fragment_formulas = [frag.replace('+', '').replace('-', '') for frag in fragment_formulas]
         # Create the required data dictionary for the current compound
         req_data = getRequiredFields()
         # DiffMS sorts by intensity, so we will do the same
         sort_idxs = np.argsort(intensity_values)
         req_data['mz'] = mz_values[sort_idxs]
         req_data['intensity'] = intensity_values[sort_idxs]
-        req_data['fragments'] = relevant_fragments[sort_idxs]
+        req_data['fragments'] = np.array(fragment_formulas)[sort_idxs]
         req_data['formula'] = formula
         req_data['smiles'] = smiles
         req_data['ion'] = ion
