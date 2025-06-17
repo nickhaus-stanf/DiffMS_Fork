@@ -148,3 +148,7 @@ __pycache__/
 **/__pycache__/
 *.pyc
 train.sh
+
+# Data extraction scripts
+external_data_processing/*.sh
+external_data_processing/*.out

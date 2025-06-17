@@ -5,6 +5,7 @@ import json
 from tqdm import tqdm
 import rdkit.Chem as Chem
 from rdkit.Chem.Descriptors import ExactMolWt
+from rdkit.Chem.rdMolDescriptors import CalcMolFormula
 from rdkit.Chem import rdinchi
 import warnings
 import csv
@@ -146,7 +147,7 @@ def extrapolateCurrentData(req_data: dict):
 
     # SMILES can be used to extrapolate the formula
     if 'formula' in empty_fields:
-        req_data['formula'] = Chem.rdMolDescriptors.CalcMolFormula(mol)
+        req_data['formula'] = CalcMolFormula(mol)
 
     # SMILES can be used to extrapolate the mass
     if 'mass' in empty_fields:
@@ -454,14 +455,26 @@ def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
         if num_found_fragments != len(mz_values):
             warnings.warn(f"Not all fragments were found in the m/z values for compound {cmpd_i}! Skipping compound")
             continue  # Skip this compound if not all fragments were found
+        if np.any(relevant_fragments == ''):
+            warnings.warn(f"Some fragments were not found in the m/z values for compound {cmpd_i}! Skipping compound")
+            continue
 
+        # IBM fragments are given by SMILES -- convert to molecular formulae
+        fragment_formulas = list()  # List to store the formulas of the fragments
+        for frag in relevant_fragments:
+            mol = Chem.MolFromSmiles(frag, sanitize=False) # Ignore sanitization because fragments are ions with incorrect valence at times
+            mol.UpdatePropertyCache(strict=False) # Update the property cache to ensure the formula is correct
+            frag_formula = CalcMolFormula(mol)
+            fragment_formulas.append(frag_formula)
+        # Get rid of any ion tokens
+        fragment_formulas = [frag.replace('+', '').replace('-', '') for frag in fragment_formulas]
         # Create the required data dictionary for the current compound
         req_data = getRequiredFields()
         # DiffMS sorts by intensity, so we will do the same
         sort_idxs = np.argsort(intensity_values)
         req_data['mz'] = mz_values[sort_idxs]
         req_data['intensity'] = intensity_values[sort_idxs]
-        req_data['fragments'] = relevant_fragments[sort_idxs]
+        req_data['fragments'] = np.array(fragment_formulas)[sort_idxs]
         req_data['formula'] = formula
         req_data['smiles'] = smiles
         req_data['ion'] = ion
@@ -498,21 +511,27 @@ def extractIbmData(cfg, spec_dir: str, subformula_dir: str, helper_dir: str):
 
     num_chars = len(str(num_total_cmpds))  # Number of characters in the total number of compounds
     # Iterate through each file and extract the data using extractIbmChunkData generator
+    cmpd_idx = 0  # Index for the current compound
     for file in tqdm(all_files, desc='Extracting data from files'):
         data = pd.read_parquet(file, engine='pyarrow')
         data_generator = extractIbmChunkData(data, ion_mode=cfg.ion_mode, energy=cfg.energy)
-        for cmpd_i, cmpd_data in enumerate(data_generator):
-            cur_name = 'IBM' + str(cmpd_i).zfill(num_chars) # Create a left-padded name for the compound
+        for cmpd_data in data_generator:
+            cur_name = 'IBM' + str(cmpd_idx).zfill(num_chars) # Create a left-padded name for the compound
             # Write the helper file for the compound
             writeHelperFile(helper_dir, cur_name, cmpd_data)
             # Write the spectrum and subformula files for the compound
             writeCompoundDiffMsFiles(spec_dir, subformula_dir, cfg.read_dir, cur_name, cmpd_data)
+            cmpd_idx += 1  # Increment the compound index
     # After all files are processed, write the files that require the entire dataset to be processed
     createDatasetDiffMsFiles(cfg, helper_dir)
 #####################################################################################################################
     
-@hydra.main(version_base='1.1', config_path='./configs/extract_dataset', config_name='main')
+@hydra.main(version_base='1.1', config_path='../configs/extract_dataset', config_name='main')
 def main(cfg):
+    # Make sure read and save directories are provided
+    assert cfg.dataset.read_dir is not None, "Please provide a read directory for the dataset!"
+    assert cfg.dataset.save_dir is not None, "Please provide a save directory for the dataset!"
+
     # Ensure the save directory exists
     if not os.path.exists(cfg.dataset.save_dir):
         os.makedirs(cfg.dataset.save_dir)
