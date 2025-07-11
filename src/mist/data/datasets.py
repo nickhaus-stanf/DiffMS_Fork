@@ -126,9 +126,10 @@ def get_paired_spectra(
         ]
         spectra_list = [spec for spec, smi in tq(zip(spectra_list, spectra_smiles))]
 
-    # debug
-    print(f'\n\nLoaded spectra: {spectra_list}')
-    print(f'\n\nLoaded molecules: {mol_list}')
+    # # debug
+
+    # print(f'\n\nLoaded spectra: {len(spectra_list)}')# {spectra_list}')
+    # print(f'\n\nLoaded molecules: {len(mol_list)}')# {mol_list}')
 
     # remove any samples that contain atoms other than ['C', 'N', 'S', 'O', 'F', 'Cl', 'Br', 'H']
     updated_spectra_list = []
@@ -141,6 +142,9 @@ def get_paired_spectra(
             else:
                 updated_spectra_list.append(spec)
                 updated_mol_list.append(mol)
+
+    # print(f'\n\nPost-loop spectra: {len(updated_spectra_list)}')# {updated_spectra_list}')
+    # print(f'\n\nPost-loop mols: {len(updated_mol_list)}')# {updated_mol_list}\n\n')
 
     logging.info("Done creating spectra objects")
     return (updated_spectra_list, updated_mol_list)
