@@ -4,7 +4,7 @@ import numpy as np
 import json
 from tqdm import tqdm
 import rdkit.Chem as Chem
-from rdkit.Chem.Descriptors import ExactMolWt
+from rdkit.Chem.Descriptors import ExactMolWt, MolWt
 from rdkit.Chem import rdinchi
 import warnings
 import csv
@@ -150,7 +150,8 @@ def extrapolateCurrentData(req_data: dict):
 
     # SMILES can be used to extrapolate the mass
     if 'mass' in empty_fields:
-        req_data['mass'] = ExactMolWt(mol)
+        # req_data['mass'] = ExactMolWt(mol)
+        req_data['mass'] = MolWt(mol)
 
     return req_data
 
