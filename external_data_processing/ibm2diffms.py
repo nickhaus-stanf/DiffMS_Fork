@@ -4,7 +4,7 @@ import numpy as np
 import json
 from tqdm import tqdm
 import rdkit.Chem as Chem
-from rdkit.Chem.Descriptors import ExactMolWt, MolWt
+from rdkit.Chem.Descriptors import ExactMolWt
 from rdkit.Chem import rdinchi
 import warnings
 import csv
@@ -29,6 +29,9 @@ REQUIRED_FIELDS = ['split', 'smiles', 'inchi', 'inchikey', 'formula', 'mass',
 ISOLATED_FIELDS = ['fragments', 'mz', 'intensity', 'ion'] # Exclude split so it can be created later if desired
 # Fields that are structural representations of the compound
 STRUCTURAL_FIELDS = ['smiles', 'inchi']
+
+# Proton mass, added to neutral mass to obtain the parent ion mass
+PROTON_MASS = 1.0072764665789 # Da
 
 # Helper functions
 #####################################################################################################################
@@ -150,8 +153,7 @@ def extrapolateCurrentData(req_data: dict):
 
     # SMILES can be used to extrapolate the mass
     if 'mass' in empty_fields:
-        # req_data['mass'] = ExactMolWt(mol)
-        req_data['mass'] = MolWt(mol)
+        req_data['mass'] = ExactMolWt(mol) + PROTON_MASS
 
     return req_data
 
