@@ -6,3 +6,4 @@ split_name: splits.tsv # Name of the processed split file
 labels_name: labels.tsv # Name of the processed labels file
 ion_mode: positive # Ion mode for the dataset
 energy: 40 # Collision energy for the dataset
+remove_hydrogen: true # To remove adduct proton, if present
