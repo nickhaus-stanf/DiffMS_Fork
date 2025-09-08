@@ -44,18 +44,17 @@ class DiffMSFileWriter:
     def __init__(self,
                  dataset_name: str,
                  total_cmpds: int,
-                 read_dir: str,
-                 save_dir: str):
+                 save_dir: str,
+                 remove_hydrogen: bool = False):
         """
         Initialize the DiffMSFileWriter.
         Args:
             dataset_name (str): The name of the dataset. Will be used to save files in a standard format (e.g., IBM000000001).
             total_cmpds (int): The total number of compounds in the entire dataset.
-            read_dir (str): The directory to read the compound information from.
             save_dir (str): The directory to save the DiffMS files to.
+            remove_hydrogen (bool), optional: Whether to remove an extra hydrogen from each fragment to account for adduct ion. Default is False.
         """
         # Make sure read and save directories are provided
-        assert read_dir is not None, "Please provide a read directory for the dataset!"
         assert save_dir is not None, "Please provide a save directory for the dataset!"
 
         # Ensure the save directory exists
@@ -72,9 +71,11 @@ class DiffMSFileWriter:
                 os.makedirs(d)
 
         # Store variables as class attributes
+        self.save_dir = save_dir
         self.spectrum_dir = spectrum_dir
         self.subformula_dir = subformula_dir
         self.helper_dir = helper_dir
+        self.remove_hydrogen = remove_hydrogen
         self.dataset_name = dataset_name
         self.total_cmpds = total_cmpds
         self.cmpd_counter = 0
@@ -85,16 +86,22 @@ class DiffMSFileWriter:
         Generate a standard name for the compound with left-padding.
         """
         cmpd_name = self.dataset_name + str(self.cmpd_counter).zfill(len(str(self.total_cmpds)))  # Left-pad the name with zeros
+        self.cur_name = cmpd_name
         self.cmpd_counter += 1
         return cmpd_name
 
+    
+    def _getCurrentName(self):
+        """
+        Get the current name of the compound.
+        """
+        return self.cur_name
 
-    def _writeHelperFile(self, save_dir: str, cmpd_name: str, req_data: dict):
+
+    def _writeHelperFile(self, req_data: dict):
         """
         Write files that contain the required data for DiffMS for each compound as a JSON file.
         Args:
-            save_dir (str): The directory to save helper files to.
-            cmpd_name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
             req_data (dict): A dictionary containing the required data for the compound.
         """
         # Verify the data is in the correct format
@@ -124,12 +131,10 @@ class DiffMSFileWriter:
             json.dump(req_data, f)
             
 
-    def _writeDiffMsSplitsFile(self, save_dir: str, help_file_dir: str, split_file: str, save_name: str = 'splits.tsv'):
+    def _writeDiffMsSplitsFile(self, split_file: str, save_name: str = 'splits.tsv'):
         """
         Writes the split files in the appropriate format for DiffMS.
         Args:
-            save_dir (str): The directory to save the split files to.
-            help_file_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
             split_file (str): The path to the split file containing the train, val, and test splits. Default is 'splits.tsv'.
             save_name (str), optional: The name of the file to write the splits to. It will be a .tsv file.
         """
@@ -143,10 +148,10 @@ class DiffMSFileWriter:
         test_idxs = split_dict.get('test', list())
         
         # Ensure save_name has the correct file extension
-        save_path = validateFileExtension(save_name, '.tsv', save_dir)
+        save_path = validateFileExtension(save_name, '.tsv', self.save_dir)
 
         # Get all of the compound names from the read directory
-        all_read_filenames = os.listdir(help_file_dir)
+        all_read_filenames = os.listdir(self.helper_dir)
         all_names = sorted([f.replace('.json', '') for f in all_read_filenames if f.endswith('.json')])
 
         # Write the split file in the appropriate format
@@ -170,31 +175,28 @@ class DiffMSFileWriter:
             writer.writerows(all_data)
 
 
-    def _writeDiffMsLabelsFile(self, save_dir: str, help_file_dir: str, save_name: str = 'labels.tsv', dataset_name: str = 'N/A'):
+    def _writeDiffMsLabelsFile(self, save_name: str = 'labels.tsv'):
         """
         Writes the labels file in the appropriate format for DiffMS.
         Args:
-            save_dir (str): The directory to save the labels file to.
-            help_file_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
             save_name (str), optional: The name of the file to write the labels to. It will be a .tsv file. Default is 'labels.tsv'.
-            dataset_name (str), optional: The name of the dataset to include in the labels file. Default is 'N/A'.
         """
         # Get all of the compound names and info from the read directory
-        all_read_filenames = sorted([f for f in os.listdir(help_file_dir) if f.endswith('.json')])
+        all_read_filenames = sorted([f for f in os.listdir(self.helper_dir) if f.endswith('.json')])
 
-        with open(os.path.join(save_dir, save_name), 'w') as f:
+        with open(os.path.join(self.save_dir, save_name), 'w') as f:
             writer = csv.writer(f, delimiter='\t')
             # Write the header
             header = ['dataset', 'spec', 'name', 'ionization', 'formula', 'smiles', 'inchikey', 'instrument']
             writer.writerow(header)
             label_data_keys = ['ion', 'formula', 'smiles', 'inchikey']
             for filename in tqdm(all_read_filenames, desc='Writing labels file'):
-                data_dict = json.load(open(os.path.join(help_file_dir, filename), 'r'))
+                data_dict = json.load(open(os.path.join(self.helper_dir, filename), 'r'))
                 # Data is expected to be in a certain format
                 # Get the data from the file and put it in the correct order
                 file_data = [data_dict.get(key, '') for key in label_data_keys]
                 cmpd_name = filename.replace('.json', '')
-                row_data = [dataset_name, cmpd_name, ''] + file_data + ['Unknown']  # '' for name and 'Unknown' for instrumentation as it's not provided
+                row_data = [self.dataset_name, cmpd_name, ''] + file_data + ['Unknown']  # '' for name and 'Unknown' for instrumentation as it's not provided
                 writer.writerow(row_data)  # Write the row to the file
 
 
@@ -202,26 +204,19 @@ class DiffMSFileWriter:
     #       Some files have multiple >ms2peaks sections, which suggests some difference between these spectra.
     #       No difference is explicitly stated in the CANOPUS dataset, but the sections vary in length.
     #       For now, use one energy to match our current implementation.
-    def _writeDiffMsSpectrumFile(self, save_dir: str, helper_dir: str, name: str, req_data: dict = None):
+    def _writeDiffMsSpectrumFile(self, req_data: dict):
         """
         Writes the spectrum files in the appropriate format for DiffMS.
         Args:
-            save_dir (str): The directory to save the spectrum files to.
-            helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-            name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-            req_data (dict), optional: A dictionary containing the required data for the compound. If None, will read from the helper_dir.
+            req_data (dict): A dictionary containing the required data for the compound. If None, will read from the helper_dir.
         """
-        if req_data is None:
-            # Read the compound information from the file
-            read_path = os.path.join(helper_dir, name + '.json')
-            with open(read_path, 'r') as f:
-                req_data = json.load(f)
-
         # Ensure save_name has the correct file extension
-        save_path = validateFileExtension(name, '.ms', save_dir)
+        save_path = validateFileExtension(self._getCurrentName(), '.ms', self.spectrum_dir)
+        name = self._getCurrentName()
         
         # Write the spectrum files in the appropriate format
         with open(save_path, 'w') as f:
+            f.write(f">compound {name}\n")  # Write the compound name
             f.write(f">formula {req_data['formula']}\n")  # Write the formula
             f.write(f">parentmass {req_data['mass']}\n")  # Write the mass of the precursor ion
             f.write(f">ionization {req_data['ion']}\n")  # Write the ionization 
@@ -229,8 +224,8 @@ class DiffMSFileWriter:
             f.write(f">InChIKey {req_data['inchikey']}\n")  # Write the InChI Key
             f.write(f"#smiles {req_data['smiles']}\n")  # Write the SMILES
             f.write(f"#instrumentation N/A\n")  # Placeholder for instrumentation
-            f.write(f"#_FILE {name.replace('.ms', '')}\n")  # Write the file name without the extension
-            f.write(f"#spectrumid {name.replace('.ms', '')}\n")  # Write the spectrum ID
+            f.write(f"#_FILE {name}\n")  # Write the file name without the extension
+            f.write(f"#spectrumid {name}\n")  # Write the spectrum ID
             f.write(f"#_FILE_PATH {save_path}\n")  # Write the file path
             f.write(f"#InchI {req_data['inchi']}\n")  # Write the InChI again, oddly
             f.write(f"#source {save_path}\n")  # Write the source file path
@@ -240,23 +235,19 @@ class DiffMSFileWriter:
                 f.write(f"{mz} {intensity}\n")  # Write the m/z and intensity pairs
 
 
-    def _writeDiffMsSubformulaFile(self, save_dir: str, helper_dir: str, name: str, req_data: dict = None):
+    def _writeDiffMsSubformulaFile(self, req_data: dict):
         """
         Writes the subformula files in the appropriate format for DiffMS.
         Args:
-            save_dir (str): The directory to save the subformula files to.
-            helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-            name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
             req_data (dict), optional: A dictionary containing the required data for the compound. If None, will read from the helper_dir.
         """
-        if req_data is None:
-            # Read the compound information from the file
-            read_path = os.path.join(helper_dir, name + '.json')
-            with open(read_path, 'r') as f:
-                req_data = json.load(f)
-
         # Ensure save_name has the correct file extension
-        save_path = validateFileExtension(name, '.json', save_dir)
+        save_path = validateFileExtension(self._getCurrentName(), '.json', self.subformula_dir)
+
+        # Get the fragments and remove adduct hydrogen if appropriate
+        fragments = list(req_data['fragments'])
+        if self.remove_hydrogen:
+            fragments = [removeHydrogen(frag) for frag in fragments]
 
         # Get the information for the subformula file
         output_table = {
@@ -265,7 +256,7 @@ class DiffMSFileWriter:
             'mono_mass': list(), # Not sure what this is supposed to be
             'abs_mass_diff': list(), # Not sure what this is supposed to be
             'mass_diff': list(),  # Not sure what this is supposed to be
-            'formula': list(req_data['fragments']),  # The fragments for the compound
+            'formula': fragments,  # The fragments for the compound
             'ions': [req_data['ion']] * len(req_data['mz'])  # The ionization of the compound, repeated for each fragment
         }
         subformula_data = {
@@ -278,7 +269,7 @@ class DiffMSFileWriter:
         json.dump(subformula_data, open(save_path, 'w'))
 
 
-    def writeCompoundDiffMsFiles(self, spectrum_dir: str, subformula_dir: str, helper_dir: str, name: str, req_data: dict = None):
+    def writeCompoundDiffMsFiles(self, req_data: dict = None):
         """
         Writes the DiffMS files for a single compound in the appropriate format.
         Args:
@@ -290,17 +281,17 @@ class DiffMSFileWriter:
         """
         if req_data is None:
             # Read the compound information from the file
-            read_path = os.path.join(helper_dir, name + '.json')
+            read_path = os.path.join(self.helper_dir, self._getCurrentName() + '.json')
             with open(read_path, 'r') as f:
                 req_data = json.load(f)
 
         # Write the spectrum file
-        self._writeDiffMsSpectrumFile(spectrum_dir, helper_dir, name, req_data)
+        self._writeDiffMsSpectrumFile(req_data)
         # Write the subformula file
-        self._writeDiffMsSubformulaFile(subformula_dir, helper_dir, name, req_data)
+        self._writeDiffMsSubformulaFile(req_data)
 
 
-    def createComopundDiffMsFiles(self, total_cmpds: int, data_name: str, cmpd_data: dict, helper_dir: str, spec_dir: str, subformula_dir: str):
+    def createCompundDiffMsFiles(self, cmpd_data: dict):
         """
         Write the DiffMS files that require only a single compound.
         Args:
@@ -311,9 +302,10 @@ class DiffMSFileWriter:
             spec_dir (str): The directory to save the spectrum files to.
             subformula_dir (str): The directory to save the subformula files to.
         """
-        pass
+        self._writeHelperFile(cmpd_data)
+        self.writeCompoundDiffMsFiles()
 
-    def createDatasetDiffMsFiles(self, cfg, helper_dir):
+    def createDatasetDiffMsFiles(self, split_file, split_name, labels_name):
         """
         Writes the DiffMS files that require the entire dataset to be processed.
         Args:
@@ -321,22 +313,27 @@ class DiffMSFileWriter:
         """
         # Check to see if splits were provided. If not, create them
         # If path doesn't exist, assume comma-delimited string of percentages for train, val, test
-        if not os.path.exists(cfg.split_file):
-            train_percent, val_percent, test_percent = map(float, cfg.split_file.split(','))
-        
-            # Infer number of compounds from the spectrum directory since a file is created for each compound
-            num_cmpds = len(os.listdir(os.path.join(cfg.save_dir, 'spec_files')))
+        if not os.path.exists(split_file):
+            train_percent, val_percent, test_percent = map(float, split_file.split(','))
 
             # Create the splits file if it doesn't exist
-            self.createSplitsFile(cfg.save_dir, num_cmpds, train_percent=train_percent, val_percent=val_percent, test_percent=test_percent)
-            cfg.split_file = os.path.join(cfg.save_dir, 'created_splits.npy')  # Update the split file path
+            createSplitsFile(self.save_dir, self.total_cmpds, train_percent=train_percent, val_percent=val_percent, test_percent=test_percent)
+            split_file = os.path.join(self.save_dir, 'created_splits.npy')  # Update the split file path
 
-        self._writeDiffMsSplitsFile(cfg.save_dir, helper_dir, cfg.split_file, save_name=cfg.split_name)
-        self._writeDiffMsLabelsFile(cfg.save_dir, helper_dir, save_name=cfg.labels_name, dataset_name=cfg.dataset_name)
+        self._writeDiffMsSplitsFile(split_file, save_name=split_name)
+        self._writeDiffMsLabelsFile(save_name=labels_name)
+
+    def cleanupHelperFiles(self):
+        """
+        Removes the helper files directory to save space.
+        """
+        if os.path.exists(self.helper_dir):
+            import shutil
+            shutil.rmtree(self.helper_dir)
 #####################################################################################################################
+# END Class to write DiffMS files
 
-
-# Helper functions
+# START Helper functions
 #####################################################################################################################
 def validateFileExtension(name: str, desired_extension: str, save_dir: str = None):
     """
@@ -388,10 +385,40 @@ def createSplitsFile(save_dir: str, num_cmpds: int, train_percent: float = 80.0,
     # Save the splits to a .npy file
     save_path = os.path.join(save_dir, 'created_splits.npy')
     np.save(save_path, splits)
+
+
+# The IBM dataset includes an extra hydrogen on each fragment to account for adduct ion. Remove that hydrogen
+def removeHydrogen(formula):
+    if "H" not in formula:
+        return formula
+    new_formula = formula.split("H")
+    num_hs = ''
+    # For each character after the H, check if it's a digit
+    second_half = new_formula[1]
+    if len(second_half) == 0: # If there is no second half, just return the first half
+        return new_formula[0]
+    elif not second_half[0].isdigit(): # If second half has no digit, remove the only hydrogen
+        return new_formula[0] + new_formula[1]
+    elif second_half.isdigit(): # If the second half is all digits, we can skip the loop and just subtract one
+        num_hs = str(int(second_half) - 1)
+        return new_formula[0] + "H" + num_hs
+    done_digits = False
+    i = 0
+    while not done_digits:
+        if not second_half[i].isdigit():
+            done_digits = True
+        else:
+            num_hs += second_half[i]
+            i += 1
+    num_hs = second_half if second_half.isdigit() else num_hs
+    new_formula[1] = second_half[i:]
+    num_hs = str(int(num_hs) - 1)
+    new_formula = new_formula[0] + "H" + num_hs + new_formula[1]
+    return new_formula
 #####################################################################################################################
+# END Helper functions
 
-
-# Functions to handle the required fields for each compound and extrapolate data
+# START Functions to handle the required fields for each compound and extrapolate data
 #####################################################################################################################
 def getRequiredFields():
     """
@@ -468,256 +495,11 @@ def extrapolateAllData(req_data: dict):
     for cmpd, data in tqdm(req_data.items()):
         req_data[cmpd] = extrapolateCurrentData(data)
 #####################################################################################################################
-        
+# END Functions to handle the required fields for each compound and extrapolate data
 
-# Functions to write DiffMS files
+# START IBM data extraction specific functions
 #####################################################################################################################
-def writeHelperFile(save_dir: str, cmpd_name: str, req_data: dict):
-    """
-    Write files that contain the required data for DiffMS for each compound as a JSON file.
-    Args:
-        save_dir (str): The directory to save helper files to.
-        cmpd_name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-        req_data (dict): A dictionary containing the required data for the compound.
-    """
-    # Verify the data is in the correct format
-    if np.any([k not in req_data for k in REQUIRED_FIELDS]):
-        raise ValueError(f"Required fields not found in req_data! Please ensure the data is in the correct format.")
-    
-    # Ensure that the required fields are filled
-    for k, v in req_data.items():
-        if k == 'split':
-            continue
-        if v is None:
-            raise ValueError(f"Required field '{k}' is not filled for compound! Please ensure the data is in the correct format.")
-
-    # Ensure save_name has the correct file extension
-    save_path = validateFileExtension(cmpd_name, '.json', save_dir)
-
-    # Change any np arrays to lists for JSON serialization
-    for k, v in req_data.items():
-        if isinstance(v, np.ndarray):
-            req_data[k] = v.tolist()
-
-    # Write the helper file in the appropriate format
-    with open(save_path, 'w') as f:
-        json.dump(req_data, f)
-        
-
-def writeDiffMsSplitsFile(save_dir: str, help_file_dir: str, split_file: str, save_name: str = 'splits.tsv'):
-    """
-    Writes the split files in the appropriate format for DiffMS.
-    Args:
-        save_dir (str): The directory to save the split files to.
-        help_file_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        split_file (str): The path to the split file containing the train, val, and test splits. Default is 'splits.tsv'.
-        save_name (str), optional: The name of the file to write the splits to. It will be a .tsv file.
-    """
-    split_dict = np.load(split_file, allow_pickle=True).item()
-    # Ensure that the split_dict is in the correct format
-    if not isinstance(split_dict, dict):
-        raise ValueError(f"Split file {split_file} is not a dictionary!")
-    # Distribute splits to their own list
-    train_idxs = split_dict.get('train', list())
-    val_idxs = split_dict.get('val', list())
-    test_idxs = split_dict.get('test', list())
-    
-    # Ensure save_name has the correct file extension
-    save_path = validateFileExtension(save_name, '.tsv', save_dir)
-
-    # Get all of the compound names from the read directory
-    all_read_filenames = os.listdir(help_file_dir)
-    all_names = sorted([f.replace('.json', '') for f in all_read_filenames if f.endswith('.json')])
-
-    # Write the split file in the appropriate format
-    with open(save_path, 'w', newline='') as f:
-        writer = csv.writer(f, delimiter='\t')
-        # Write the header
-        header = ['name', 'split']
-        writer.writerow(header)
-        all_data = list()
-        for i, name in tqdm(enumerate(all_names), desc='Writing split file'):
-            if i in train_idxs:
-                split = 'train'
-            elif i in val_idxs:
-                split = 'val'
-            elif i in test_idxs:
-                split = 'test'
-            else:
-                warnings.warn(f"Index {i} not found in any split!")
-            all_data.append([name, split])
-        # Write the data
-        writer.writerows(all_data)
-
-
-def writeDiffMsLabelsFile(save_dir: str, help_file_dir: str, save_name: str = 'labels.tsv', dataset_name: str = 'N/A'):
-    """
-    Writes the labels file in the appropriate format for DiffMS.
-    Args:
-        save_dir (str): The directory to save the labels file to.
-        help_file_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        save_name (str), optional: The name of the file to write the labels to. It will be a .tsv file. Default is 'labels.tsv'.
-        dataset_name (str), optional: The name of the dataset to include in the labels file. Default is 'N/A'.
-    """
-    # Get all of the compound names and info from the read directory
-    all_read_filenames = sorted([f for f in os.listdir(help_file_dir) if f.endswith('.json')])
-
-    with open(os.path.join(save_dir, save_name), 'w') as f:
-        writer = csv.writer(f, delimiter='\t')
-        # Write the header
-        header = ['dataset', 'spec', 'name', 'ionization', 'formula', 'smiles', 'inchikey', 'instrument']
-        writer.writerow(header)
-        label_data_keys = ['ion', 'formula', 'smiles', 'inchikey']
-        for filename in tqdm(all_read_filenames, desc='Writing labels file'):
-            data_dict = json.load(open(os.path.join(help_file_dir, filename), 'r'))
-            # Data is expected to be in a certain format
-            # Get the data from the file and put it in the correct order
-            file_data = [data_dict.get(key, '') for key in label_data_keys]
-            cmpd_name = filename.replace('.json', '')
-            row_data = [dataset_name, cmpd_name, ''] + file_data + ['Unknown']  # '' for name and 'Unknown' for instrumentation as it's not provided
-            writer.writerow(row_data)  # Write the row to the file
-
-
-# NOTE: It appears DiffMS can use more than one energy based on the spectrum files.
-#       Some files have multiple >ms2peaks sections, which suggests some difference between these spectra.
-#       No difference is explicitly stated in the CANOPUS dataset, but the sections vary in length.
-#       For now, use one energy to match our current implementation.
-def writeDiffMsSpectrumFile(save_dir: str, helper_dir: str, name: str, req_data: dict = None):
-    """
-    Writes the spectrum files in the appropriate format for DiffMS.
-    Args:
-        save_dir (str): The directory to save the spectrum files to.
-        helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-        req_data (dict), optional: A dictionary containing the required data for the compound. If None, will read from the helper_dir.
-    """
-    if req_data is None:
-        # Read the compound information from the file
-        read_path = os.path.join(helper_dir, name + '.json')
-        with open(read_path, 'r') as f:
-            req_data = json.load(f)
-
-    # Ensure save_name has the correct file extension
-    save_path = validateFileExtension(name, '.ms', save_dir)
-    
-    # Write the spectrum files in the appropriate format
-    with open(save_path, 'w') as f:
-        f.write(f">formula {req_data['formula']}\n")  # Write the formula
-        f.write(f">parentmass {req_data['mass']}\n")  # Write the mass of the precursor ion
-        f.write(f">ionization {req_data['ion']}\n")  # Write the ionization 
-        f.write(f">InChi {req_data['inchi']}\n")  # Write the InChI
-        f.write(f">InChIKey {req_data['inchikey']}\n")  # Write the InChI Key
-        f.write(f"#smiles {req_data['smiles']}\n")  # Write the SMILES
-        f.write(f"#instrumentation N/A\n")  # Placeholder for instrumentation
-        f.write(f"#_FILE {name.replace('.ms', '')}\n")  # Write the file name without the extension
-        f.write(f"#spectrumid {name.replace('.ms', '')}\n")  # Write the spectrum ID
-        f.write(f"#_FILE_PATH {save_path}\n")  # Write the file path
-        f.write(f"#InchI {req_data['inchi']}\n")  # Write the InChI again, oddly
-        f.write(f"#source {save_path}\n")  # Write the source file path
-        f.write("\n")  # Blank line to separate the header from the data
-        f.write(">ms2peaks\n")  # Start of the MS/MS peaks section
-        for mz, intensity in zip(req_data['mz'], req_data['intensity']):
-            f.write(f"{mz} {intensity}\n")  # Write the m/z and intensity pairs
-
-
-def writeDiffMsSubformulaFile(save_dir: str, helper_dir: str, name: str, req_data: dict = None):
-    """
-    Writes the subformula files in the appropriate format for DiffMS.
-    Args:
-        save_dir (str): The directory to save the subformula files to.
-        helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-        req_data (dict), optional: A dictionary containing the required data for the compound. If None, will read from the helper_dir.
-    """
-    if req_data is None:
-        # Read the compound information from the file
-        read_path = os.path.join(helper_dir, name + '.json')
-        with open(read_path, 'r') as f:
-            req_data = json.load(f)
-
-    # Ensure save_name has the correct file extension
-    save_path = validateFileExtension(name, '.json', save_dir)
-
-    # Get the information for the subformula file
-    output_table = {
-        'mz': list(req_data['mz']),  # The m/z values for the fragments
-        'ms2_inten': list(req_data['intensity']),  # The intensity values for the fragments
-        'mono_mass': list(), # Not sure what this is supposed to be
-        'abs_mass_diff': list(), # Not sure what this is supposed to be
-        'mass_diff': list(),  # Not sure what this is supposed to be
-        'formula': list(req_data['fragments']),  # The fragments for the compound
-        'ions': [req_data['ion']] * len(req_data['mz'])  # The ionization of the compound, repeated for each fragment
-    }
-    subformula_data = {
-        'cand_form': req_data['formula'],  # The formula of the compound
-        'cand_ion': req_data['ion'],  # The ionization of the compound
-        'output_tbl': output_table,  # The output table
-    }
-
-    # Write the subformula data to a file
-    json.dump(subformula_data, open(save_path, 'w'))
-
-
-def writeCompoundDiffMsFiles(spectrum_dir: str, subformula_dir: str, helper_dir: str, name: str, req_data: dict = None):
-    """
-    Writes the DiffMS files for a single compound in the appropriate format.
-    Args:
-        spectrum_dir (str): The directory to save the spectrum files to.
-        subformula_dir (str): The directory to save the subformula files to.
-        helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-        req_data (dict), optional: A dictionary containing the required data for the compound. If None, will read from the helper_dir.
-    """
-    if req_data is None:
-        # Read the compound information from the file
-        read_path = os.path.join(helper_dir, name + '.json')
-        with open(read_path, 'r') as f:
-            req_data = json.load(f)
-
-    # Write the spectrum file
-    writeDiffMsSpectrumFile(spectrum_dir, helper_dir, name, req_data)
-    # Write the subformula file
-    writeDiffMsSubformulaFile(subformula_dir, helper_dir, name, req_data)
-
-
-def createComopundDiffMsFiles(total_cmpds: int, data_name: str, cmpd_data: dict, helper_dir: str, spec_dir: str, subformula_dir: str):
-    """
-    Write the DiffMS files that require only a single compound.
-    Args:
-        total_cmpds (int): The total number of compounds in the entire dataset.
-        data_name (str): The name of the compound in standard format (e.g., IBM000000001) with left-padding.
-        cmpd_data (dict): A dictionary containing the required data for the compound.
-        helper_dir (str): The directory to read the compound information from. See writeHelperFile for the expected format.
-        spec_dir (str): The directory to save the spectrum files to.
-        subformula_dir (str): The directory to save the subformula files to.
-    """
-
-
-def createDatasetDiffMsFiles(cfg, helper_dir):
-    """
-    Writes the DiffMS files that require the entire dataset to be processed.
-    Args:
-        cfg (dict): Configuration dictionary containing parameters like save_dir and read_dir.
-    """
-    # Check to see if splits were provided. If not, create them
-    # If path doesn't exist, assume comma-delimited string of percentages for train, val, test
-    if not os.path.exists(cfg.split_file):
-        train_percent, val_percent, test_percent = map(float, cfg.split_file.split(','))
-    
-        # Infer number of compounds from the spectrum directory since a file is created for each compound
-        num_cmpds = len(os.listdir(os.path.join(cfg.save_dir, 'spec_files')))
-
-        # Create the splits file if it doesn't exist
-        createSplitsFile(cfg.save_dir, num_cmpds, train_percent=train_percent, val_percent=val_percent, test_percent=test_percent)
-        cfg.split_file = os.path.join(cfg.save_dir, 'created_splits.npy')  # Update the split file path
-
-    writeDiffMsSplitsFile(cfg.save_dir, helper_dir, cfg.split_file, save_name=cfg.split_name)
-    writeDiffMsLabelsFile(cfg.save_dir, helper_dir, save_name=cfg.labels_name, dataset_name=cfg.dataset_name)
-#####################################################################################################################
-
-
-# IBM data extraction specific functions
-#####################################################################################################################
+# TODO: Make a generator that reads one-by-one instead of loading the whole list into memory
 def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
     """
     Takes in an open pandas DataFrame taht is a chunk of the IBM dataset and extracts the relevant data.
@@ -802,7 +584,7 @@ def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
     yield from gathered_data  # Yield the extracted data for the each compound
 
 
-def extractIbmData(cfg, spec_dir: str, subformula_dir: str, helper_dir: str):
+def extractIbmData(cfg, dataset_cfg):
     """
     Extracts the IBM dataset from the specified directory and returns the relevant data.
     Assumes the only files within the directory are the IBM dataset files.
@@ -827,23 +609,26 @@ def extractIbmData(cfg, spec_dir: str, subformula_dir: str, helper_dir: str):
         num_total_cmpds += data.metadata.num_rows
     print(f"Total number of compounds in dataset: {num_total_cmpds}")
 
-    num_chars = len(str(num_total_cmpds))  # Number of characters in the total number of compounds
+    file_writer = DiffMSFileWriter(dataset_name='ibm',
+                                   total_cmpds=num_total_cmpds,
+                                   save_dir=dataset_cfg['save_dir'],
+                                   remove_hydrogen=dataset_cfg['remove_hydrogen'])
+
     # Iterate through each file and extract the data using extractIbmChunkData generator
-    cmpd_idx = 0  # Index for the current compound
     for file in tqdm(all_files, desc='Extracting data from files'):
         data = pd.read_parquet(file, engine='pyarrow')
         data_generator = extractIbmChunkData(data, ion_mode=cfg.ion_mode, energy=cfg.energy)
         for cmpd_data in data_generator:
-            cur_name = 'IBM' + str(cmpd_idx).zfill(num_chars) # Create a left-padded name for the compound
-            # Write the helper file for the compound
-            writeHelperFile(helper_dir, cur_name, cmpd_data)
-            # Write the spectrum and subformula files for the compound
-            writeCompoundDiffMsFiles(spec_dir, subformula_dir, helper_dir, cur_name, cmpd_data)
-            cmpd_idx += 1  # Increment the compound index
+            file_writer.createCompundDiffMsFiles(cmpd_data)
+
+    file_writer.createDatasetDiffMsFiles(cfg.split_file, cfg.split_name, cfg.labels_name)
     # After all files are processed, write the files that require the entire dataset to be processed
-    createDatasetDiffMsFiles(cfg, helper_dir)
+    if dataset_cfg['cleanup']:
+        file_writer.cleanupHelperFiles()
 #####################################################################################################################
-    
+# END IBM data extraction specific functions
+
+
 @hydra.main(version_base='1.1', config_path='../configs/extract_dataset', config_name='main')
 def main(cfg):
     # Make sure read and save directories are provided
@@ -854,30 +639,20 @@ def main(cfg):
     if not os.path.exists(cfg.dataset.save_dir):
         os.makedirs(cfg.dataset.save_dir)
 
-    # Ensure the required subdirectories exist
-    spectrum_dir = os.path.join(cfg.dataset.save_dir, 'spec_files')
-    subformula_dir = os.path.join(cfg.dataset.save_dir, 'subformulae')
-    helper_dir = os.path.join(cfg.dataset.save_dir, 'helper_files')
-    check_dirs = [spectrum_dir, subformula_dir, helper_dir]
-    for d in check_dirs:
-        if not os.path.exists(d):
-            os.makedirs(d)
+    spectrum_dir = subformula_dir = helper_dir = None
 
-    all_args = {'cfg': cfg.dataset, 
-                'spec_dir': spectrum_dir, 
-                'subformula_dir': subformula_dir,
-                'helper_dir': helper_dir}
+    dataset_cfg = {'spec_dir': spectrum_dir, 
+                   'subformula_dir': subformula_dir,
+                   'helper_dir': helper_dir,
+                   'save_dir': cfg.dataset.save_dir,
+                   'remove_hydrogen': cfg.dataset.remove_hydrogen,
+                   'cleanup': cfg.cleanup}
     
     if cfg.dataset.dataset_name.lower() == 'ibm':
-        extractIbmData(**all_args)
+        extractIbmData(cfg.dataset, dataset_cfg)
     else:
         raise NotImplementedError(f"Dataset {cfg.dataset.dataset_name} is not supported yet!")
     
-    if cfg.cleanup:
-        import shutil
-        # Remove the helper files directory if cleanup is enabled
-        if os.path.exists(helper_dir):
-            shutil.rmtree(helper_dir)
-    
+
 if __name__ == '__main__':
     main()
