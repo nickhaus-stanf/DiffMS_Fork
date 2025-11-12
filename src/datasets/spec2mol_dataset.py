@@ -48,18 +48,22 @@ class Spec2MolDataModule(MolecularDataModule):
 
         spectra_mol_pairs = datasets.get_paired_spectra(**cfg.dataset)
         spectra_mol_pairs = list(zip(*spectra_mol_pairs))
+        print("[INFO] Made the spectra-mol pairs, preparing to split...")
 
         # Redefine splitter s.t. this splits three times and remove subsetting
         split_name, (train, val, test) = data_splitter.get_splits(spectra_mol_pairs)
+        print(f"[INFO] Successfully split the data")
 
         # randomly shuffle test set with fixed seed
         random.seed(42)
         random.shuffle(test)
 
+        print(f"[INFO] Allocating datasets...")
         ms_datasets = {'train': datasets.SpectraMolDataset(spectra_mol_list=train, featurizer=paired_featurizer, **cfg.dataset),
                     'val': datasets.SpectraMolDataset(spectra_mol_list=val, featurizer=paired_featurizer, **cfg.dataset),
                     'test': datasets.SpectraMolDataset(spectra_mol_list=test, featurizer=paired_featurizer, **cfg.dataset)}
         super().__init__(cfg, ms_datasets)
+        print("[INFO] DataModule ready.")
 
     def train_dataloader(self) -> DataLoader:
         return get_paired_loader_graph(self.train_dataset, shuffle=True, batch_size=self.batch_size, **self.kwargs)
