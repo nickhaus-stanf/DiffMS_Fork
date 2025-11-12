@@ -11,6 +11,8 @@ import warnings
 import csv
 import hydra
 from typing import Generator
+from rdkit import RDLogger
+RDLogger.DisableLog('rdApp.*')  # Disable RDKit warnings for cleaner output
 
 # Needed information at some point:
 # - a standard name for each compound with left-padded indices (e.g., IBM000000001)
@@ -500,7 +502,91 @@ def extrapolateAllData(req_data: dict):
 # START IBM data extraction specific functions
 #####################################################################################################################
 # TODO: Make a generator that reads one-by-one instead of loading the whole list into memory
-def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
+# def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
+#     """
+#     Takes in an open pandas DataFrame taht is a chunk of the IBM dataset and extracts the relevant data.
+#     Creates a generator that yields the extracted data for each compound in the chunk.
+#     Args:
+#         chunk (pandas.DataFrame): The chunk of the IBM dataset to extract data from.
+#         ion_mode (str): The ion mode for the MS/MS data ('positive' or 'negative').
+#         energy (int): The collision energy for the MS/MS data.
+#     Yields:
+#         req_data (dict): Input req_dict modified to include extracted data.
+#     """
+#     gathered_data = list()
+
+#     num_chunk_cmpds = len(chunk)
+#     for cmpd_i in tqdm(range(num_chunk_cmpds), desc='Extracting data from chunk'):
+#         curr_cmpd = chunk.iloc[cmpd_i]
+        
+#         # Extract the SMILES for the compound
+#         smiles = curr_cmpd['smiles']
+
+#         # Extract the formula for the compound
+#         formula = curr_cmpd['molecular_formula']
+
+#         # Extract the MS/MS data for the compound
+#         ms_data = curr_cmpd[f'msms_{ion_mode}_{energy}ev']
+
+#         # Extract the fragment information for the compound
+#         fragment_data = curr_cmpd[f'msms_fragments_{ion_mode}']
+
+#         # IBM paper assumes all compounds are [M+H]+ or [M-H]- ions, so we can use the mass of the precursor ion
+#         ion = '[M+H]+' if ion_mode == 'positive' else '[M-H]-'
+
+#         # Parse the data into a desired format
+#         # NOTE: This could get moved to an external function if information is typically extracted in this way,
+#         #   but for now, we'll keep it here for simplicity.
+#         # Convert the (m/z, intensity) pairs into two separate lists for each spectrum
+#         mz_values, intensity_values = list(), list()
+#         for mz_intensity_pair in ms_data:
+#             mz_values.append(float(mz_intensity_pair[0])) # m/z value, ensure it's a float
+#             intensity_values.append(float(mz_intensity_pair[1])) # intensity value, ensure it's a float
+#         mz_values, intensity_values = np.array(mz_values), np.array(intensity_values)
+
+#         # Fragment info is stored as (m/z, fragment) pairs for every fragment in all spectra for a particular ion mode.
+#         #   Get the intensity of each relevant fragment s.t. the fragment info can be parallel to the m/z and intensity values.
+#         relevant_fragments = np.array([''] * len(mz_values), dtype=object)  # Initialize an array for relevant fragments
+#         num_found_fragments = 0
+#         for mz_frag_pair in fragment_data:
+#             frag_mz = float(mz_frag_pair[0])
+#             mz_idx = np.where(mz_values == frag_mz)[0]
+#             if len(mz_idx):
+#                 relevant_fragments[mz_idx[0]] = mz_frag_pair[1]
+#                 num_found_fragments += 1
+#         if num_found_fragments != len(mz_values):
+#             warnings.warn(f"Not all fragments were found in the m/z values for compound {cmpd_i}! Skipping compound")
+#             continue  # Skip this compound if not all fragments were found
+#         if np.any(relevant_fragments == ''):
+#             warnings.warn(f"Some fragments were not found in the m/z values for compound {cmpd_i}! Skipping compound")
+#             continue
+
+#         # IBM fragments are given by SMILES -- convert to molecular formulae
+#         fragment_formulas = list()  # List to store the formulas of the fragments
+#         for frag in relevant_fragments:
+#             mol = Chem.MolFromSmiles(frag, sanitize=False) # Ignore sanitization because fragments are ions with incorrect valence at times
+#             mol.UpdatePropertyCache(strict=False) # Update the property cache to ensure the formula is correct
+#             frag_formula = CalcMolFormula(mol)
+#             fragment_formulas.append(frag_formula)
+#         # Get rid of any ion tokens
+#         fragment_formulas = [frag.replace('+', '').replace('-', '') for frag in fragment_formulas]
+#         # Create the required data dictionary for the current compound
+#         req_data = getRequiredFields()
+#         # DiffMS sorts by intensity, so we will do the same
+#         sort_idxs = np.argsort(intensity_values)
+#         req_data['mz'] = mz_values[sort_idxs]
+#         req_data['intensity'] = intensity_values[sort_idxs]
+#         req_data['fragments'] = np.array(fragment_formulas)[sort_idxs]
+#         req_data['formula'] = formula
+#         req_data['smiles'] = smiles
+#         req_data['ion'] = ion
+#         req_data = extrapolateCurrentData(req_data)  # Extrapolate the data for the current compound
+#         gathered_data.append(req_data)
+
+#     yield from gathered_data  # Yield the extracted data for the each compound
+
+
+def extractIbmChunkData(chunk: pd.DataFrame, ion_modes: str, energies: int):
     """
     Takes in an open pandas DataFrame taht is a chunk of the IBM dataset and extracts the relevant data.
     Creates a generator that yields the extracted data for each compound in the chunk.
@@ -511,77 +597,75 @@ def extractIbmChunkData(chunk: pd.DataFrame, ion_mode: str, energy: int):
     Yields:
         req_data (dict): Input req_dict modified to include extracted data.
     """
-    gathered_data = list()
-
     num_chunk_cmpds = len(chunk)
     for cmpd_i in tqdm(range(num_chunk_cmpds), desc='Extracting data from chunk'):
-        curr_cmpd = chunk.iloc[cmpd_i]
-        
-        # Extract the SMILES for the compound
-        smiles = curr_cmpd['smiles']
+        for ion_mode in ion_modes:
+            for energy in energies:
+                curr_cmpd = chunk.iloc[cmpd_i]
+                
+                # Extract the SMILES for the compound
+                smiles = curr_cmpd['smiles']
 
-        # Extract the formula for the compound
-        formula = curr_cmpd['molecular_formula']
+                # Extract the formula for the compound
+                formula = curr_cmpd['molecular_formula']
 
-        # Extract the MS/MS data for the compound
-        ms_data = curr_cmpd[f'msms_{ion_mode}_{energy}ev']
+                # Extract the MS/MS data for the compound
+                ms_data = curr_cmpd[f'msms_{ion_mode}_{energy}ev']
 
-        # Extract the fragment information for the compound
-        fragment_data = curr_cmpd[f'msms_fragments_{ion_mode}']
+                # Extract the fragment information for the compound
+                fragment_data = curr_cmpd[f'msms_fragments_{ion_mode}']
 
-        # IBM paper assumes all compounds are [M+H]+ or [M-H]- ions, so we can use the mass of the precursor ion
-        ion = '[M+H]+' if ion_mode == 'positive' else '[M-H]-'
+                # IBM paper assumes all compounds are [M+H]+ or [M-H]- ions, so we can use the mass of the precursor ion
+                ion = '[M+H]+' if ion_mode == 'positive' else '[M-H]-'
 
-        # Parse the data into a desired format
-        # NOTE: This could get moved to an external function if information is typically extracted in this way,
-        #   but for now, we'll keep it here for simplicity.
-        # Convert the (m/z, intensity) pairs into two separate lists for each spectrum
-        mz_values, intensity_values = list(), list()
-        for mz_intensity_pair in ms_data:
-            mz_values.append(float(mz_intensity_pair[0])) # m/z value, ensure it's a float
-            intensity_values.append(float(mz_intensity_pair[1])) # intensity value, ensure it's a float
-        mz_values, intensity_values = np.array(mz_values), np.array(intensity_values)
+                # Parse the data into a desired format
+                # NOTE: This could get moved to an external function if information is typically extracted in this way,
+                #   but for now, we'll keep it here for simplicity.
+                # Convert the (m/z, intensity) pairs into two separate lists for each spectrum
+                mz_values, intensity_values = list(), list()
+                for mz_intensity_pair in ms_data:
+                    mz_values.append(float(mz_intensity_pair[0])) # m/z value, ensure it's a float
+                    intensity_values.append(float(mz_intensity_pair[1])) # intensity value, ensure it's a float
+                mz_values, intensity_values = np.array(mz_values), np.array(intensity_values)
 
-        # Fragment info is stored as (m/z, fragment) pairs for every fragment in all spectra for a particular ion mode.
-        #   Get the intensity of each relevant fragment s.t. the fragment info can be parallel to the m/z and intensity values.
-        relevant_fragments = np.array([''] * len(mz_values), dtype=object)  # Initialize an array for relevant fragments
-        num_found_fragments = 0
-        for mz_frag_pair in fragment_data:
-            frag_mz = float(mz_frag_pair[0])
-            mz_idx = np.where(mz_values == frag_mz)[0]
-            if len(mz_idx):
-                relevant_fragments[mz_idx[0]] = mz_frag_pair[1]
-                num_found_fragments += 1
-        if num_found_fragments != len(mz_values):
-            warnings.warn(f"Not all fragments were found in the m/z values for compound {cmpd_i}! Skipping compound")
-            continue  # Skip this compound if not all fragments were found
-        if np.any(relevant_fragments == ''):
-            warnings.warn(f"Some fragments were not found in the m/z values for compound {cmpd_i}! Skipping compound")
-            continue
+                # Fragment info is stored as (m/z, fragment) pairs for every fragment in all spectra for a particular ion mode.
+                #   Get the intensity of each relevant fragment s.t. the fragment info can be parallel to the m/z and intensity values.
+                relevant_fragments = np.array([''] * len(mz_values), dtype=object)  # Initialize an array for relevant fragments
+                num_found_fragments = 0
+                for mz_frag_pair in fragment_data:
+                    frag_mz = float(mz_frag_pair[0])
+                    mz_idx = np.where(mz_values == frag_mz)[0]
+                    if len(mz_idx):
+                        relevant_fragments[mz_idx[0]] = mz_frag_pair[1]
+                        num_found_fragments += 1
+                if num_found_fragments != len(mz_values):
+                    warnings.warn(f"Not all fragments were found in the m/z values for compound {cmpd_i}! Skipping compound")
+                    continue  # Skip this compound if not all fragments were found
+                if np.any(relevant_fragments == ''):
+                    warnings.warn(f"Some fragments were not found in the m/z values for compound {cmpd_i}! Skipping compound")
+                    continue
 
-        # IBM fragments are given by SMILES -- convert to molecular formulae
-        fragment_formulas = list()  # List to store the formulas of the fragments
-        for frag in relevant_fragments:
-            mol = Chem.MolFromSmiles(frag, sanitize=False) # Ignore sanitization because fragments are ions with incorrect valence at times
-            mol.UpdatePropertyCache(strict=False) # Update the property cache to ensure the formula is correct
-            frag_formula = CalcMolFormula(mol)
-            fragment_formulas.append(frag_formula)
-        # Get rid of any ion tokens
-        fragment_formulas = [frag.replace('+', '').replace('-', '') for frag in fragment_formulas]
-        # Create the required data dictionary for the current compound
-        req_data = getRequiredFields()
-        # DiffMS sorts by intensity, so we will do the same
-        sort_idxs = np.argsort(intensity_values)
-        req_data['mz'] = mz_values[sort_idxs]
-        req_data['intensity'] = intensity_values[sort_idxs]
-        req_data['fragments'] = np.array(fragment_formulas)[sort_idxs]
-        req_data['formula'] = formula
-        req_data['smiles'] = smiles
-        req_data['ion'] = ion
-        req_data = extrapolateCurrentData(req_data)  # Extrapolate the data for the current compound
-        gathered_data.append(req_data)
-
-    yield from gathered_data  # Yield the extracted data for the each compound
+                # IBM fragments are given by SMILES -- convert to molecular formulae
+                fragment_formulas = list()  # List to store the formulas of the fragments
+                for frag in relevant_fragments:
+                    mol = Chem.MolFromSmiles(frag, sanitize=False) # Ignore sanitization because fragments are ions with incorrect valence at times
+                    mol.UpdatePropertyCache(strict=False) # Update the property cache to ensure the formula is correct
+                    frag_formula = CalcMolFormula(mol)
+                    fragment_formulas.append(frag_formula)
+                # Get rid of any ion tokens
+                fragment_formulas = [frag.replace('+', '').replace('-', '') for frag in fragment_formulas]
+                # Create the required data dictionary for the current compound
+                req_data = getRequiredFields()
+                # DiffMS sorts by intensity, so we will do the same
+                sort_idxs = np.argsort(intensity_values)
+                req_data['mz'] = mz_values[sort_idxs]
+                req_data['intensity'] = intensity_values[sort_idxs]
+                req_data['fragments'] = np.array(fragment_formulas)[sort_idxs]
+                req_data['formula'] = formula
+                req_data['smiles'] = smiles
+                req_data['ion'] = ion
+                req_data = extrapolateCurrentData(req_data)  # Extrapolate the data for the current compound
+                yield req_data
 
 
 def extractIbmData(cfg, dataset_cfg):
@@ -617,7 +701,8 @@ def extractIbmData(cfg, dataset_cfg):
     # Iterate through each file and extract the data using extractIbmChunkData generator
     for file in tqdm(all_files, desc='Extracting data from files'):
         data = pd.read_parquet(file, engine='pyarrow')
-        data_generator = extractIbmChunkData(data, ion_mode=cfg.ion_mode, energy=cfg.energy)
+        # data_generator = extractIbmChunkData(data, ion_mode=cfg.ion_mode, energy=cfg.energy)
+        data_generator = extractIbmChunkData(data, ion_modes=cfg.ion_mode, energies=cfg.energy)
         for cmpd_data in data_generator:
             file_writer.createCompundDiffMsFiles(cmpd_data)
 
