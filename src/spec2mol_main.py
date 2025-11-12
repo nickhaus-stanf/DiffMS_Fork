@@ -195,7 +195,9 @@ def main(cfg: DictConfig):
         logging.warning("Unknown dataset {}. Continuing".format(cfg["dataset"]["name"])) 
 
     datamodule = spec2mol_dataset.Spec2MolDataModule(cfg) # TODO: Add hyper for n_bits
+    print("[INFO] Getting dataset infos...")
     dataset_infos = spec2mol_dataset.Spec2MolDatasetInfos(datamodule, cfg)
+    print("[INFO] Done getting dataset infos.")
 
     domain_features = ExtraMolecularFeatures(dataset_infos=dataset_infos)
     if cfg.model.extra_features is not None:
@@ -203,12 +205,14 @@ def main(cfg: DictConfig):
     else:
         extra_features = DummyExtraFeatures()
 
+    print("[INFO] Computing input/output dims...")
     dataset_infos.compute_input_output_dims(datamodule=datamodule, extra_features=extra_features, domain_features=domain_features)
 
     logging.info("Dataset infos:", dataset_infos.output_dims)
     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
 
     # We do not evaluate novelty during training
+    print("[INFO] Setting up visualization tools...")
     visualization_tools = MolecularVisualization(cfg.dataset.remove_h, dataset_infos=dataset_infos)
 
     model_kwargs = {'dataset_infos': dataset_infos, 'train_metrics': train_metrics, 'visualization_tools': visualization_tools,
@@ -227,6 +231,7 @@ def main(cfg: DictConfig):
     os.makedirs('logs/', exist_ok=True)
     os.makedirs('logs/' + cfg.general.name, exist_ok=True)
 
+    print("[INFO] Initializing model...")
     model = Spec2MolDenoisingDiffusion(cfg=cfg, **model_kwargs)
 
     callbacks = []
